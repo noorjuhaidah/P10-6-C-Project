@@ -1,1 +1,3 @@
 # P10-6-C-Project
+
+print(hello)
