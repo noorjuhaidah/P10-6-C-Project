@@ -1,8 +1,15 @@
-Database Name: Sample-CMS
-Authors: Assistant Prof Oran Zane Devilly
+Database Name: StudentRecords
+Authors: P10-6
 
 Table Name: StudentRecords
 ID	Name		Programme		Mark
 2301234	Joshua Chen	Software Engineering	70.5
 2201234	Isaac Teo	Computer Science	63.4
 2304567	John Levoy	Digital Supply Chain	85.9
+2501974 Noor Juhaidah   Civil Engineering   67.3
+2501882 Anastasia Foo   Software Engineering    69.9
+2501741 Low Li Xuan Digital Supply Chain    95.8
+2501837 Sheryn Kong Accounting      99.9
+2501954 Tiffany Tan Computer Science    50.8
+2201354 Sky Teo     Nursing     76.4
+2309999 Ahmad Ali   Software Engineering    51.4        
