@@ -463,10 +463,20 @@ void cmd_save(void){
 }
 
 /* ===================== UI / MAIN ===================== */
-void print_declaration(void){
-    printf("Declaration\n");
-    printf("SIT’s policy on copying does not allow students to copy source code or assessment solutions from others or AI.\n");
-    printf("We hereby declare that we understand and agree to this policy.\n\n");
+void print_declaration(void) {
+    FILE *fp = fopen("declaration.txt", "r");
+    if (!fp) {
+        printf("Error: declaration.txt not found.\n\n");
+        return;
+    }
+
+    char line[512];
+    while (fgets(line, sizeof(line), fp)) {
+        printf("%s", line);
+    }
+
+    fclose(fp);
+    printf("\n");
 }
 
 int main(void){
