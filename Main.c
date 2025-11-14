@@ -1,19 +1,30 @@
-// Main.c
-// INF1002 Programming Fundamentals - Class Management System (Basic Version)
-// Compile:  gcc Main.c -o CMS
-// Run:      ./CMS
+// Main.c — SUPER BEGINNER CMS (no 'static', interactive, file-friendly)
+// Build:  gcc Main.c -o CMS
+// Run:    ./CMS
+//
+// Features (match assignment table):
+//  OPEN <filename>  -> open the database file and read in all records
+//  SHOW ALL         -> display all current records in memory
+//  INSERT           -> if same ID exists: error+cancel; else PROMPT every column
+//  QUERY ID=<n>     -> show record if found; else "no record found"
+//  UPDATE ID=<n>    -> if not found: warn; else PROMPT every column (Enter = keep)
+//  DELETE ID=<n>    -> if not found: warn; else double-confirm then delete
+//  SAVE             -> save all current records back to the same file
+//  HELP / EXIT
 
 #define _CRT_SECURE_NO_WARNINGS
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdlib.h>
 
-#define INITIAL_CAPACITY 64
-#define NAME_MAX_LEN     128
-#define PROG_MAX_LEN     128
-#define LINE_MAX_LEN     1024
+/* ---------- Simple configuration ---------- */
+#define MAX_STUDENTS 1000
+#define NAME_MAX_LEN 128
+#define PROG_MAX_LEN 128
+#define LINE_MAX_LEN 1024
 
+/* ---------- Data type ---------- */
 typedef struct {
     int   id;
     char  name[NAME_MAX_LEN];
@@ -21,306 +32,467 @@ typedef struct {
     float mark;
 } Student;
 
-typedef struct {
-    Student *data;
-    size_t   size;
-    size_t   cap;
-} StudentVec;
+/* ---------- Globals ---------- */
+Student g_students[MAX_STUDENTS];
+int     g_count = 0;
+char    g_open_filename[260] = "";
 
-static StudentVec g_students = {NULL, 0, 0};
-static char g_open_filename[260] = "";
-
-// ---------- Utilities ----------
-static void rstrip(char *s) {
+/* ---------- Small helpers ---------- */
+void rstrip(char *s){
     size_t n = strlen(s);
-    while (n && (s[n-1] == '\n' || s[n-1] == '\r')) s[--n] = '\0';
+    while(n && (s[n-1]=='\n' || s[n-1]=='\r')) s[--n]='\0';
 }
-static void trim(char *s) {
-    size_t start = 0;
-    while (isspace((unsigned char)s[start])) start++;
-    if (start) memmove(s, s+start, strlen(s+start)+1);
-    size_t n = strlen(s);
-    while (n && isspace((unsigned char)s[n-1])) s[--n] = '\0';
+void trim(char *s){
+    size_t i=0; while(s[i] && isspace((unsigned char)s[i])) i++;
+    if(i) memmove(s, s+i, strlen(s+i)+1);
+    size_t n=strlen(s); while(n && isspace((unsigned char)s[n-1])) s[--n]='\0';
 }
-static void strtoupper(char *s) {
-    for (; *s; ++s) *s = (char)toupper((unsigned char)*s);
+int equals_ic(const char *a, const char *b){
+    while(*a && *b){ if(toupper((unsigned char)*a)!=toupper((unsigned char)*b)) return 0; a++; b++; }
+    return *a=='\0' && *b=='\0';
 }
-
-// Dynamic vector
-static void vec_init(StudentVec *v) {
-    v->cap = INITIAL_CAPACITY;
-    v->size = 0;
-    v->data = malloc(v->cap * sizeof(Student));
-}
-static void vec_free(StudentVec *v) {
-    free(v->data); v->data=NULL; v->size=0; v->cap=0;
-}
-static void vec_clear(StudentVec *v) { v->size = 0; }
-static void vec_push(StudentVec *v, Student s) {
-    if (v->size >= v->cap) {
-        v->cap *= 2;
-        v->data = realloc(v->data, v->cap * sizeof(Student));
+/* Turn any TAB or run of >=2 spaces into one '\t'. Keeps single spaces. */
+void normalize_delims(char *s){
+    char out[LINE_MAX_LEN]; size_t oi=0; int spaces=0;
+    for(size_t i=0; s[i] && oi+1<sizeof(out); ++i){
+        unsigned char c=(unsigned char)s[i];
+        if(c=='\t'){ out[oi++]='\t'; spaces=0; continue; }
+        if(c==' '){ spaces++; continue; }
+        if(spaces>=2) out[oi++]='\t'; else if(spaces==1) out[oi++]=' ';
+        spaces=0; out[oi++]=(char)c;
     }
-    v->data[v->size++] = s;
+    if(spaces>=2) out[oi++]='\t'; else if(spaces==1) out[oi++]=' ';
+    out[oi]='\0'; strncpy(s,out,LINE_MAX_LEN-1); s[LINE_MAX_LEN-1]=0;
 }
-static int find_index_by_id(const StudentVec *v, int id) {
-    for (size_t i=0;i<v->size;i++) if (v->data[i].id==id) return (int)i;
+int find_index_by_id(int id){
+    for(int i=0;i<g_count;++i) if(g_students[i].id==id) return i;
     return -1;
 }
 
-// collapse runs of >=2 spaces or tabs into a single '\t' delimiter
-static void normalize_delims(char *s) {
-    char buf[LINE_MAX_LEN]; size_t bi=0; int space_run=0;
-    for (size_t i=0; s[i] && bi+1<sizeof(buf); ++i) {
-        unsigned char c = (unsigned char)s[i];
-        if (c=='\t') { buf[bi++]='\t'; space_run=0; continue; }
-        if (c==' ') space_run++;
-        else {
-            if (space_run>=2) buf[bi++]='\t';
-            else if (space_run==1) buf[bi++]=' ';
-            space_run=0;
-            buf[bi++]=(char)c;
-        }
+/* ---------- Friendly prompts (used by INSERT/UPDATE) ---------- */
+void prompt_string(const char *label, char *out, size_t outsz){
+    while(1){
+        printf("%s", label);
+        if(!fgets(out,(int)outsz,stdin)){ out[0]='\0'; return; }
+        rstrip(out); trim(out);
+        if(out[0]) return;
+        printf("Please enter something (cannot be empty).\n");
     }
-    if (space_run>=2) buf[bi++]='\t';
-    else if (space_run==1) buf[bi++]=' ';
-    buf[bi]='\0';
-    strncpy(s,buf,LINE_MAX_LEN-1); s[LINE_MAX_LEN-1]=0;
+}
+int prompt_int(const char *label){
+    char buf[128];
+    while(1){
+        printf("%s", label);
+        if(!fgets(buf,sizeof(buf),stdin)) return 0;
+        rstrip(buf); trim(buf);
+        char *end=NULL; long v=strtol(buf,&end,10);
+        if(end && (*end=='\0')) return (int)v;
+        printf("Not a valid integer. Try again.\n");
+    }
+}
+float prompt_float(const char *label){
+    char buf[128];
+    while(1){
+        printf("%s", label);
+        if(!fgets(buf,sizeof(buf),stdin)) return 0.0f;
+        rstrip(buf); trim(buf);
+        char *end=NULL; float v=(float)strtod(buf,&end);
+        if(end && (*end=='\0')) return v;
+        printf("Not a valid number. Try again (e.g., 88.5).\n");
+    }
+}
+/* Edit helpers (blank = keep current) */
+void prompt_edit_string(const char *label, const char *current, char *out, size_t outsz){
+    printf("%s (current: %s) -> ", label, current);
+    if(!fgets(out,(int)outsz,stdin)){ out[0]='\0'; return; }
+    rstrip(out); trim(out);
+}
+float prompt_edit_float(const char *label, float current){
+    char buf[128];
+    printf("%s (current: %.1f) -> ", label, current);
+    if(!fgets(buf,sizeof(buf),stdin)) return current;
+    rstrip(buf); trim(buf);
+    if(buf[0]=='\0') return current;
+    char *end=NULL; float v=(float)strtod(buf,&end);
+    if(end && *end=='\0') return v;
+    printf("Not a valid number, keeping current.\n");
+    return current;
 }
 
-// Portable strtok wrapper
-#if defined(_MSC_VER)
-  #define TOK(str,delim,saveptr) strtok_s((str),(delim),(saveptr))
-#else
-  #define TOK(str,delim,saveptr) strtok_r((str),(delim),(saveptr))
-#endif
-
-// parse KEY=VALUE (quoted or not)
-static int parse_kv(const char *src,const char *KEY,char *out,size_t outsz){
-    char upkey[64]; strncpy(upkey,KEY,63); upkey[63]=0; strtoupper(upkey);
-    const char *p=src;
+/* ---------- Parse KEY=VALUE (quotes ok, spaces around '=' ok) ---------- */
+int parse_kv(const char *src, const char *KEY, char *out, size_t outsz){
+    size_t klen=strlen(KEY); const char *p=src;
     while(*p){
         while(*p && isspace((unsigned char)*p)) p++;
-        const char *t=p; int inq=0; const char *eq=NULL;
-        while(*p){ if(*p=='"') inq=!inq; if(!inq && isspace((unsigned char)*p)) break; if(!eq && *p=='=') eq=p; p++; }
-        if(eq && eq>t){
-            size_t keylen=eq-t; char keybuf[64];
-            if(keylen>63) keylen=63; strncpy(keybuf,t,keylen); keybuf[keylen]=0;
-            trim(keybuf); strtoupper(keybuf);
-            if(strcmp(keybuf,upkey)==0){
-                const char *v=eq+1; while(*v && isspace((unsigned char)*v)) v++;
-                if(*v=='"'){ v++; const char *vend=v; while(*vend && *vend!='"') vend++; size_t len=vend-v; if(len>=outsz) len=outsz-1; strncpy(out,v,len); out[len]=0; return 1;}
-                else { const char *vend=v; while(*vend && !isspace((unsigned char)*vend)) vend++; size_t len=vend-v; if(len>=outsz) len=outsz-1; strncpy(out,v,len); out[len]=0; return 1;}
+        const char *q=p; size_t i=0;
+        while(i<klen && q[i] && toupper((unsigned char)q[i])==toupper((unsigned char)KEY[i])) i++;
+        if(i==klen){
+            q+=i; while(*q && isspace((unsigned char)*q)) q++;
+            if(*q=='='){
+                q++; while(*q && isspace((unsigned char)*q)) q++;
+                if(*q=='"'){ q++; const char *e=q; while(*e && *e!='"') e++; size_t len=(size_t)(e-q);
+                    if(len>=outsz) len=outsz-1; strncpy(out,q,len); out[len]='\0'; return 1;
+                }else{ const char *e=q; while(*e && !isspace((unsigned char)*e)) e++; size_t len=(size_t)(e-q);
+                    if(len>=outsz) len=outsz-1; strncpy(out,q,len); out[len]='\0'; return 1;
+                }
             }
         }
+        while(*p && !isspace((unsigned char)*p)) p++;
+        while(*p && isspace((unsigned char)*p)) p++;
     }
     return 0;
 }
 
-// ---------- File I/O ----------
-static int load_from_file(const char *filename){
-    FILE *fp = fopen(filename, "r");
-    if (!fp) return 0;
+/* ===================== FILE I/O ===================== */
+/* Reads typical CMS files with tabs *or* aligned spaces. */
+int load_from_file(const char *filename){
+    FILE *fp=fopen(filename,"r"); if(!fp) return 0;
+    g_count=0; char line[LINE_MAX_LEN]; int table_started=0;
 
-    vec_clear(&g_students);
-
-    char line[LINE_MAX_LEN];
-    int table_started = 0;
-
-    while (fgets(line, sizeof(line), fp)) {
+    while(fgets(line,sizeof(line),fp)){
         rstrip(line);
+        char raw[LINE_MAX_LEN]; strncpy(raw,line,LINE_MAX_LEN-1); raw[LINE_MAX_LEN-1]=0; trim(raw);
+        if(raw[0]=='\0') continue;
 
-        char raw[LINE_MAX_LEN];
-        strncpy(raw, line, LINE_MAX_LEN-1); raw[LINE_MAX_LEN-1] = 0;
-        trim(raw);
-        if (raw[0] == '\0') continue;
-
-        if (!table_started) {
-            char up[LINE_MAX_LEN];
-            strncpy(up, raw, LINE_MAX_LEN-1); up[LINE_MAX_LEN-1] = 0;
-            strtoupper(up);
-            if (strstr(up, "ID") && strstr(up, "MARK")) table_started = 1;
+        if(!table_started){
+            char up[LINE_MAX_LEN]; strncpy(up,raw,LINE_MAX_LEN-1); up[LINE_MAX_LEN-1]=0;
+            for(char *u=up; *u; ++u) *u=(char)toupper((unsigned char)*u);
+            if(strstr(up,"ID") && strstr(up,"MARK")) table_started=1;
             continue;
         }
+        if(!isdigit((unsigned char)raw[0])) continue;  // data rows start with ID
 
-        if (!isdigit((unsigned char)raw[0])) continue;
-
-        // normalize to tabs
-        char tmp[LINE_MAX_LEN];
-        strncpy(tmp, raw, LINE_MAX_LEN-1); tmp[LINE_MAX_LEN-1]=0;
+        char tmp[LINE_MAX_LEN]; strncpy(tmp,raw,LINE_MAX_LEN-1); tmp[LINE_MAX_LEN-1]=0;
         normalize_delims(tmp);
 
-        char *save=NULL;
-        char *idtok=TOK(tmp,"\t",&save);
-        char *nametok=TOK(NULL,"\t",&save);
-        char *progtok=TOK(NULL,"\t",&save);
-        char *marktok=TOK(NULL,"\t",&save);
+        char *idtok=strtok(tmp,"\t");
+        char *nametok=strtok(NULL,"\t");
+        char *progtok=strtok(NULL,"\t");
+        char *marktok=strtok(NULL,"\t");
 
-        if (idtok && nametok && progtok && marktok) {
-            Student s; memset(&s,0,sizeof(s));
-            s.id=atoi(idtok);
-            strncpy(s.name,nametok,NAME_MAX_LEN-1); trim(s.name);
-            strncpy(s.programme,progtok,PROG_MAX_LEN-1); trim(s.programme);
-            s.mark=(float)atof(marktok);
-            vec_push(&g_students,s);
+        if(idtok && nametok && progtok && marktok){
+            trim(idtok); trim(nametok); trim(progtok); trim(marktok);
+            if(g_count<MAX_STUDENTS){
+                Student s; s.id=atoi(idtok);
+                strncpy(s.name,nametok,NAME_MAX_LEN-1); s.name[NAME_MAX_LEN-1]=0;
+                strncpy(s.programme,progtok,PROG_MAX_LEN-1); s.programme[PROG_MAX_LEN-1]=0;
+                s.mark=(float)atof(marktok?marktok:"0"); // safety
+                g_students[g_count++]=s;
+            }
             continue;
         }
 
-        // fallback: first token = ID, last = mark
-        char work[LINE_MAX_LEN];
-        strncpy(work, raw, LINE_MAX_LEN-1); work[LINE_MAX_LEN-1]=0;
-        char *p=work;
-        while(*p && isspace((unsigned char)*p)) p++;
-        char *id_start=p;
-        while(*p && !isspace((unsigned char)*p)) p++;
-        char hold=*p; *p='\0';
-        int id=atoi(id_start);
-        *p=hold;
+        /* Fallback: split manually -> first token = ID, last token = Mark,
+           middle strictly between end-of-ID and start-of-Mark. */
+        char work[LINE_MAX_LEN]; strncpy(work,raw,LINE_MAX_LEN-1); work[LINE_MAX_LEN-1]=0;
+
+        char *p=work; while(*p && isspace((unsigned char)*p)) p++;
+        char *id_start=p; while(*p && !isspace((unsigned char)*p)) p++;
+        char hold=*p; *p='\0'; int id=atoi(id_start); *p=hold;
+
+        char *after_id=p; while(*after_id && isspace((unsigned char)*after_id)) after_id++;
+
         char *end=work+strlen(work)-1;
-        while(end>p && isspace((unsigned char)*end)) *end--='\0';
-        char *mark_start=end;
-        while(mark_start>work && !isspace((unsigned char)mark_start[-1])) mark_start--;
+        while(end>work && isspace((unsigned char)*end)) *end--='\0';
+        char *mark_start=end; while(mark_start>work && !isspace((unsigned char)mark_start[-1])) mark_start--;
         float mark=(float)atof(mark_start);
         if(mark_start>work){ char *cut=mark_start-1; while(cut>work && isspace((unsigned char)*cut)) *cut--='\0'; }
+
         char middle[LINE_MAX_LEN];
-        size_t midlen=(size_t)(mark_start-work);
+        size_t midlen=(size_t)(mark_start-after_id);
         if(midlen>=sizeof(middle)) midlen=sizeof(middle)-1;
-        strncpy(middle,work,midlen); middle[midlen]='\0';
-        trim(middle);
-        normalize_delims(middle);
-        char *sv2=NULL;
-        char *name2=TOK(middle,"\t",&sv2);
-        char *prog2=TOK(NULL,"\t",&sv2);
-        Student s; memset(&s,0,sizeof(s));
-        s.id=id;
-        if(name2) {strncpy(s.name,name2,NAME_MAX_LEN-1); trim(s.name);}
-        if(prog2){strncpy(s.programme,prog2,PROG_MAX_LEN-1); trim(s.programme);}
-        s.mark=mark;
-        if(s.id>0 && s.name[0] && s.programme[0]) vec_push(&g_students,s);
-    }
+        strncpy(middle,after_id,midlen); middle[midlen]='\0';
+        trim(middle); normalize_delims(middle);
 
-    fclose(fp);
-    return 1;
-}
+        char *name2=strtok(middle,"\t");
+        char *prog2=strtok(NULL,"\t");
 
-static int save_to_file(const char *filename){
-    FILE *fp=fopen(filename,"w"); if(!fp) return 0;
-    fprintf(fp,"Database Name: StudentRecords\nAuthors: Team\n\nTable Name: StudentRecords\n");
-    fprintf(fp,"ID\tName\tProgramme\tMark\n");
-    for(size_t i=0;i<g_students.size;i++){
-        Student *s=&g_students.data[i];
-        fprintf(fp,"%d\t%s\t%s\t%.1f\n",s->id,s->name,s->programme,s->mark);
+        if(id>0 && name2 && prog2 && g_count<MAX_STUDENTS){
+            Student s; s.id=id;
+            strncpy(s.name,name2,NAME_MAX_LEN-1); s.name[NAME_MAX_LEN-1]=0; trim(s.name);
+            strncpy(s.programme,prog2,PROG_MAX_LEN-1); s.programme[PROG_MAX_LEN-1]=0; trim(s.programme);
+            s.mark=mark; g_students[g_count++]=s;
+        }
     }
     fclose(fp); return 1;
 }
 
-// ---------- Commands ----------
-static void cmd_open(const char *args){
+int save_to_file(const char *filename){
+    FILE *fp=fopen(filename,"w"); if(!fp) return 0;
+    fprintf(fp,"Database Name: StudentRecords\nAuthors: Team\n\n");
+    fprintf(fp,"Table Name: StudentRecords\n");
+    fprintf(fp,"ID\tName\tProgramme\tMark\n");
+    for(int i=0;i<g_count;++i)
+        fprintf(fp,"%d\t%s\t%s\t%.1f\n",
+                g_students[i].id,
+                g_students[i].name,
+                g_students[i].programme,
+                g_students[i].mark);
+    fclose(fp); return 1;
+}
+
+/* ===================== COMMANDS ===================== */
+void show_help(void){
+    printf("\nAvailable Commands:\n");
+    printf("  OPEN <filename>   -> open the database file and read in all records\n");
+    printf("  SHOW ALL          -> display all current records in memory\n");
+    printf("  INSERT            -> insert a new record (prompts every column)\n");
+    printf("  QUERY ID=<n>      -> search for a record with a given student ID\n");
+    printf("  UPDATE ID=<n>     -> update the data (prompts every column; Enter keeps)\n");
+    printf("  DELETE ID=<n>     -> delete the record (double confirm)\n");
+    printf("  SAVE              -> save all current records into the database file\n");
+    printf("  HELP / EXIT       -> help or quit\n\n");
+}
+
+/* OPEN */
+void cmd_open(const char *args){
     char fname[260]="";
     while(*args && isspace((unsigned char)*args)) args++;
     size_t i=0; while(*args && !isspace((unsigned char)*args) && i<sizeof(fname)-1) fname[i++]=*args++;
     fname[i]=0;
-    if(fname[0]=='\0'){ printf("CMS: Please provide a filename. Example: OPEN P10_6-CMS.txt\n"); return; }
+    if(fname[0]=='\0'){ printf("CMS: Please provide a filename. Example: OPEN Sample-CMS.txt\n"); return; }
     if(!load_from_file(fname)){
-        strncpy(g_open_filename,fname,259);
-        printf("CMS: The database file \"%s\" was not found. A new one will be created on SAVE.\n",fname); return;
+        strncpy(g_open_filename,fname,sizeof(g_open_filename)-1);
+        printf("CMS: File not found. A new one will be created on SAVE.\n");
+        return;
     }
-    strncpy(g_open_filename,fname,259);
-    printf("CMS: The database file \"%s\" is successfully opened. (%zu records loaded)\n",fname,g_students.size);
-}
-static void show_all(void){
-    if(g_students.size==0){ printf("CMS: No records loaded.\n"); return; }
-    printf("CMS: Here are all the records found in the table \"StudentRecords\".\n");
-    printf("ID  Name  Programme  Mark\n");
-    for(size_t i=0;i<g_students.size;i++){
-        Student *s=&g_students.data[i];
-        printf("%d %s %s %.1f\n",s->id,s->name,s->programme,s->mark);
-    }
-}
-static void cmd_insert(const char *args){
-    char buf[256];
-    if(!parse_kv(args,"ID",buf,sizeof(buf))){ printf("CMS: Missing ID.\n"); return; }
-    int id=atoi(buf);
-    if(find_index_by_id(&g_students,id)>=0){ printf("CMS: The record with ID=%d already exists.\n",id); return; }
-    char name[NAME_MAX_LEN],prog[PROG_MAX_LEN];
-    if(!parse_kv(args,"NAME",buf,sizeof(buf))){ printf("CMS: Missing Name.\n"); return; }
-    strncpy(name,buf,NAME_MAX_LEN-1);
-    if(!parse_kv(args,"PROGRAMME",buf,sizeof(buf))){ printf("CMS: Missing Programme.\n"); return; }
-    strncpy(prog,buf,PROG_MAX_LEN-1);
-    if(!parse_kv(args,"MARK",buf,sizeof(buf))){ printf("CMS: Missing Mark.\n"); return; }
-    float mark=(float)atof(buf);
-    Student s={id,"","",mark}; strncpy(s.name,name,NAME_MAX_LEN-1); strncpy(s.programme,prog,PROG_MAX_LEN-1);
-    vec_push(&g_students,s);
-    printf("CMS: A new record with ID=%d is successfully inserted.\n",id);
-}
-static void cmd_query(const char *args){
-    char buf[64];
-    if(!parse_kv(args,"ID",buf,sizeof(buf))){ printf("CMS: Missing ID.\n"); return; }
-    int id=atoi(buf); int idx=find_index_by_id(&g_students,id);
-    if(idx<0){ printf("CMS: The record with ID=%d does not exist.\n",id); return; }
-    Student *s=&g_students.data[idx];
-    printf("CMS: The record with ID=%d is found.\n",id);
-    printf("ID  Name  Programme  Mark\n%d %s %s %.1f\n",s->id,s->name,s->programme,s->mark);
-}
-static void cmd_update(const char *args){
-    char buf[128];
-    if(!parse_kv(args,"ID",buf,sizeof(buf))){ printf("CMS: Missing ID.\n"); return; }
-    int id=atoi(buf); int idx=find_index_by_id(&g_students,id);
-    if(idx<0){ printf("CMS: The record with ID=%d does not exist.\n",id); return; }
-    Student *s=&g_students.data[idx]; int changed=0;
-    if(parse_kv(args,"NAME",buf,sizeof(buf))){ strncpy(s->name,buf,NAME_MAX_LEN-1); changed=1; }
-    if(parse_kv(args,"PROGRAMME",buf,sizeof(buf))){ strncpy(s->programme,buf,PROG_MAX_LEN-1); changed=1; }
-    if(parse_kv(args,"MARK",buf,sizeof(buf))){ s->mark=(float)atof(buf); changed=1; }
-    printf(changed?"CMS: The record with ID=%d is successfully updated.\n":"CMS: No fields updated.\n",id);
-}
-static void cmd_delete(const char *args){
-    char buf[64];
-    if(!parse_kv(args,"ID",buf,sizeof(buf))){ printf("CMS: Missing ID.\n"); return; }
-    int id=atoi(buf); int idx=find_index_by_id(&g_students,id);
-    if(idx<0){ printf("CMS: The record with ID=%d does not exist.\n",id); return; }
-    printf("CMS: Are you sure you want to delete ID=%d? Type Y to confirm: ",id);
-    char ans[8]; if(!fgets(ans,sizeof(ans),stdin)) return; rstrip(ans);
-    if(toupper((unsigned char)ans[0])=='Y'){ for(size_t i=idx+1;i<g_students.size;i++) g_students.data[i-1]=g_students.data[i]; g_students.size--; printf("CMS: Record deleted.\n"); }
-    else printf("CMS: Deletion cancelled.\n");
-}
-static void cmd_save(void){
-    if(g_open_filename[0]=='\0'){ printf("CMS: No file open.\n"); return; }
-    if(save_to_file(g_open_filename)) printf("CMS: The database file \"%s\" is successfully saved.\n",g_open_filename);
-    else printf("CMS: Failed to save file.\n");
+    strncpy(g_open_filename,fname,sizeof(g_open_filename)-1);
+    printf("CMS: The database file \"%s\" is successfully opened. (%d records loaded)\n", fname, g_count);
 }
 
-// ---------- Declaration ----------
-static void print_declaration(void){
+/* SHOW ALL */
+/* SHOW ALL — neatly formatted columns */
+void cmd_show_all(void) {
+    if (g_count == 0) {
+        printf("CMS: No records loaded.\n");
+        return;
+    }
+    // table header
+    printf("%-10s %-20s %-25s %-6s\n", "ID", "Name", "Programme", "Mark");
+    // table rows
+    for (int i = 0; i < g_count; ++i) {
+        printf("%-10d %-20s %-25s %-6.1f\n",
+               g_students[i].id,
+               g_students[i].name,
+               g_students[i].programme,
+               g_students[i].mark);
+    }
+}
+
+/* INSERT (exact spec) */
+void cmd_insert(const char *args){
+    if(g_count>=MAX_STUDENTS){ printf("CMS: Storage is full.\n"); return; }
+
+    char buf[256]; int id;
+    if(parse_kv(args,"ID",buf,sizeof(buf))) id=atoi(buf);
+    else id=prompt_int("Enter student ID: ");
+
+    if(find_index_by_id(id)>=0){
+        printf("CMS: A record with the same student ID already exists. Insertion cancelled.\n");
+        return;
+    }
+
+    char name[NAME_MAX_LEN], prog[PROG_MAX_LEN];
+    float mark;
+
+    if(parse_kv(args,"NAME",buf,sizeof(buf))){ strncpy(name,buf,NAME_MAX_LEN-1); name[NAME_MAX_LEN-1]=0; }
+    else prompt_string("Enter Name: ", name, sizeof(name));
+
+    if(parse_kv(args,"PROGRAMME",buf,sizeof(buf))){ strncpy(prog,buf,PROG_MAX_LEN-1); prog[PROG_MAX_LEN-1]=0; }
+    else prompt_string("Enter Programme: ", prog, sizeof(prog));
+
+    if(parse_kv(args,"MARK",buf,sizeof(buf))) mark=(float)atof(buf);
+    else mark=prompt_float("Enter Mark (e.g., 88.5): ");
+
+    Student s; s.id=id;
+    strncpy(s.name,name,NAME_MAX_LEN-1); s.name[NAME_MAX_LEN-1]=0;
+    strncpy(s.programme,prog,PROG_MAX_LEN-1); s.programme[PROG_MAX_LEN-1]=0;
+    s.mark=mark;
+    g_students[g_count++]=s;
+    printf("CMS: New record inserted.\n");
+}
+
+/* QUERY */
+void cmd_query(const char *args) {
+    char buf[64];
+    int id;
+
+    // if user didn’t type ID=..., ask them
+    if (parse_kv(args, "ID", buf, sizeof(buf))) {
+        id = atoi(buf);
+    } else {
+        id = prompt_int("Enter student ID to search: ");
+    }
+
+    // find the record
+    int idx = find_index_by_id(id);
+    if (idx < 0) {
+        printf("CMS: No record found with the same student ID.\n");
+        return;
+    }
+
+    // display result
+    Student *s = &g_students[idx];
+    printf("CMS: The record with ID=%d is found.\n", id);
+    printf("ID\tName\tProgramme\tMark\n");
+    printf("%d\t%s\t%s\t%.1f\n", s->id, s->name, s->programme, s->mark);
+}
+
+/* UPDATE (prompt every column; Enter = keep) */
+void cmd_update(const char *args) {
+    char buf[256];
+    int id;
+
+    /* ID: from args if present, otherwise ask */
+    if (parse_kv(args, "ID", buf, sizeof(buf))) {
+        id = atoi(buf);
+    } else {
+        id = prompt_int("Enter student ID to update: ");
+    }
+
+    int idx = find_index_by_id(id);
+    if (idx < 0) {
+        printf("CMS: No record found with the same student ID.\n");
+        return;
+    }
+
+    Student *s = &g_students[idx];
+    int changed = 0;
+
+    /* -------- Name -------- */
+    if (parse_kv(args, "NAME", buf, sizeof(buf))) {
+        strncpy(s->name, buf, NAME_MAX_LEN - 1);
+        s->name[NAME_MAX_LEN - 1] = 0;
+        changed = 1;
+    } else {
+        char newName[NAME_MAX_LEN] = "";
+        prompt_edit_string("Enter new Name", s->name, newName, sizeof(newName));
+        if (newName[0]) {
+            strncpy(s->name, newName, NAME_MAX_LEN - 1);
+            s->name[NAME_MAX_LEN - 1] = 0;
+            changed = 1;
+        }
+    }
+
+    /* -------- Programme -------- */
+    if (parse_kv(args, "PROGRAMME", buf, sizeof(buf))) {
+        strncpy(s->programme, buf, PROG_MAX_LEN - 1);
+        s->programme[PROG_MAX_LEN - 1] = 0;
+        changed = 1;
+    } else {
+        char newProg[PROG_MAX_LEN] = "";
+        prompt_edit_string("Enter new Programme", s->programme, newProg, sizeof(newProg));
+        if (newProg[0]) {
+            strncpy(s->programme, newProg, PROG_MAX_LEN - 1);
+            s->programme[PROG_MAX_LEN - 1] = 0;
+            changed = 1;
+        }
+    }
+
+    /* -------- Mark -------- */
+    if (parse_kv(args, "MARK", buf, sizeof(buf))) {
+        s->mark = (float)atof(buf);
+        changed = 1;
+    } else {
+        float newMark = prompt_edit_float("Enter new Mark", s->mark);
+        if (newMark != s->mark) {
+            s->mark = newMark;
+            changed = 1;
+        }
+    }
+
+    if (changed) printf("CMS: Record updated.\n");
+    else         printf("CMS: No fields changed.\n");
+}
+
+/* DELETE (double confirm) */
+/* DELETE — same style as INSERT + matches requirement (double confirm) */
+void cmd_delete(const char *args) {
+    char buf[64];
+    int id;
+
+    /* ID: use from args if given, otherwise prompt */
+    if (parse_kv(args, "ID", buf, sizeof(buf))) {
+        id = atoi(buf);
+    } else {
+        id = prompt_int("Enter student ID to delete: ");
+    }
+
+    /* If no record with same student ID -> warning message */
+    int idx = find_index_by_id(id);
+    if (idx < 0) {
+        printf("CMS: No record found with the same student ID.\n");
+        return;
+    }
+
+    /* (Optional) show the record we’re about to delete */
+    Student *s = &g_students[idx];
+    printf("\nAbout to delete this record:\n");
+    printf("ID\tName\tProgramme\tMark\n");
+    printf("%d\t%s\t%s\t%.1f\n\n", s->id, s->name, s->programme, s->mark);
+
+    /* Double confirmation */
+    printf("Confirm deletion? (Y/N): ");
+    char a1[8]; if (!fgets(a1, sizeof(a1), stdin)) return; rstrip(a1);
+    if (toupper((unsigned char)a1[0]) != 'Y') {
+        printf("CMS: Deletion cancelled.\n");
+        return;
+    }
+
+    printf("Please type Y again to confirm deletion: ");
+    char a2[8]; if (!fgets(a2, sizeof(a2), stdin)) return; rstrip(a2);
+    if (toupper((unsigned char)a2[0]) != 'Y') {
+        printf("CMS: Deletion cancelled.\n");
+        return;
+    }
+
+    /* Do the delete (shift left) */
+    for (int i = idx + 1; i < g_count; ++i) g_students[i - 1] = g_students[i];
+    g_count--;
+
+    printf("CMS: Record deleted.\n");
+}
+
+/* SAVE */
+void cmd_save(void){
+    if(g_open_filename[0]=='\0'){ printf("CMS: No file open.\n"); return; }
+    if(save_to_file(g_open_filename))
+        printf("CMS: Saved successfully to \"%s\".\n", g_open_filename);
+    else
+        printf("CMS: Failed to save.\n");
+}
+
+/* ===================== UI / MAIN ===================== */
+void print_declaration(void){
     printf("Declaration\n");
-    printf("SIT’s policy on copying does not allow students to copy source code or assessment solutions from others.\n");
+    printf("SIT’s policy on copying does not allow students to copy source code or assessment solutions from others or AI.\n");
     printf("We hereby declare that we understand and agree to this policy.\n\n");
 }
 
-// ---------- Main ----------
 int main(void){
-    vec_init(&g_students);
     print_declaration();
-    printf("Commands: OPEN, SHOW ALL, INSERT, QUERY, UPDATE, DELETE, SAVE, EXIT\n");
+    show_help();
+
     char line[LINE_MAX_LEN];
     while(1){
-        printf("\n> ");
+        printf("> ");
         if(!fgets(line,sizeof(line),stdin)) break;
         rstrip(line); if(line[0]=='\0') continue;
-        char cmd[64]; const char *args; size_t i=0; const char *p=line;
+
+        char cmd[64]={0}; const char *p=line; while(*p && isspace((unsigned char)*p)) p++;
+        size_t ci=0; while(*p && !isspace((unsigned char)*p) && ci<sizeof(cmd)-1) cmd[ci++]=*p++;
         while(*p && isspace((unsigned char)*p)) p++;
-        while(*p && !isspace((unsigned char)*p) && i<63) cmd[i++]=*p++;
-        cmd[i]=0; while(*p && isspace((unsigned char)*p)) p++; args=p;
-        char up[64]; strncpy(up,cmd,63); up[63]=0; strtoupper(up);
-        if(strcmp(up,"EXIT")==0) break;
-        else if(strcmp(up,"OPEN")==0) cmd_open(args);
-        else if(strcmp(up,"SHOW")==0){ if(strncasecmp(args,"ALL",3)==0) show_all(); else printf("CMS: Use SHOW ALL.\n"); }
-        else if(strcmp(up,"INSERT")==0) cmd_insert(args);
-        else if(strcmp(up,"QUERY")==0) cmd_query(args);
-        else if(strcmp(up,"UPDATE")==0) cmd_update(args);
-        else if(strcmp(up,"DELETE")==0) cmd_delete(args);
-        else if(strcmp(up,"SAVE")==0) cmd_save();
-        else printf("CMS: Unknown command.\n");
+
+        if(equals_ic(cmd,"EXIT")) break;
+        else if(equals_ic(cmd,"HELP")) show_help();
+        else if(equals_ic(cmd,"OPEN")) cmd_open(p);
+        else if(equals_ic(cmd,"SHOW")) { if(equals_ic(p,"ALL")) cmd_show_all(); else printf("CMS: Use SHOW ALL.\n"); }
+        else if(equals_ic(cmd,"INSERT")) cmd_insert(p);
+        else if(equals_ic(cmd,"QUERY"))  cmd_query(p);
+        else if(equals_ic(cmd,"UPDATE")) cmd_update(p);
+        else if(equals_ic(cmd,"DELETE")) cmd_delete(p);
+        else if(equals_ic(cmd,"SAVE"))   cmd_save();
+        else printf("CMS: Unknown command. Type HELP for the menu.\n");
     }
-    vec_free(&g_students);
     return 0;
 }
