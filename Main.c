@@ -326,6 +326,8 @@ void show_help(void){
     printf("  DELETE ID=<n>     -> delete the record (double confirm)\n");
     printf("  SAVE              -> save all current records into the database file\n");
     printf("  UNDO              -> undo the last INSERT, UPDATE, or DELETE\n");
+    printf("  SHOW SUMMARY      -> show total students, average mark,\n");
+    printf("                       highest and lowest mark (with names)\n");
     printf("  HELP / EXIT       -> help or quit\n\n");
 }
 
@@ -602,6 +604,46 @@ void cmd_undo(void) {
     }
 }
 
+static void cmd_show_summary(void) {
+    if (g_count == 0) {
+        printf("CMS: No records loaded.\n");
+        return;
+    }
+
+    int count = g_count;
+
+    float sum = 0.0f;
+    int idx_max = 0;   // index of the highest mark
+    int idx_min = 0;   // index of the lowest mark
+
+    // loop through all records to find sum, min, max
+    for (int i = 0; i < count; i++) {
+        float mark = g_students[i].mark;
+        sum += mark;
+
+        if (mark > g_students[idx_max].mark) {
+            idx_max = i;
+        }
+        if (mark < g_students[idx_min].mark) {
+            idx_min = i;
+        }
+    }
+
+    float average = sum / count;
+
+    Student *s_max = &g_students[idx_max];
+    Student *s_min = &g_students[idx_min];
+
+    printf("CMS SUMMARY\n");
+    printf("-----------\n");
+    printf("Total number of students : %d\n", count);
+    printf("Average mark             : %.2f\n", average);
+    printf("Highest mark             : %.1f (Student ID: %d, Name: %s)\n",
+           s_max->mark, s_max->id, s_max->name);
+    printf("Lowest mark              : %.1f (Student ID: %d, Name: %s)\n",
+           s_min->mark, s_min->id, s_min->name);
+}
+
 /* ---------- PRINT DECLARATION ---------- */
 void print_declaration(void){
     FILE *fp=fopen("declaration.txt","r");
@@ -642,18 +684,14 @@ int main(void){
         if(equals_ic(cmd,"EXIT")) break;
         else if(equals_ic(cmd,"HELP")) show_help();
         else if(equals_ic(cmd,"OPEN")) cmd_open(p);
-        else if(equals_ic(cmd,"SHOW")) {
-            char first[16];
-            int fi=0;
-            const char *q=p;
-
-            while(*q && !isspace((unsigned char)*q) && fi<15)
-                first[fi++]=*q++;
-            first[fi]=0;
-            while(*q && isspace((unsigned char)*q)) q++;
-
-            if(equals_ic(first,"ALL")) cmd_show_all(q);
-            else printf("CMS: Use SHOW ALL.\n");
+        else if (equals_ic(cmd, "SHOW")) {
+            if (equals_ic(p, "ALL")) {
+                cmd_show_all(p);
+            } else if (equals_ic(p, "SUMMARY")) {
+                cmd_show_summary();     // <-- new summary function you wrote
+            } else {
+                printf("CMS: Use SHOW ALL or SHOW SUMMARY.\n");
+            }
         }
         else if(equals_ic(cmd,"INSERT")) cmd_insert(p);
         else if(equals_ic(cmd,"QUERY"))  cmd_query(p);
