@@ -8,7 +8,7 @@ ID	Name		Programme		Mark
 2304567	John Levoy	Digital Supply Chain	85.9
 2501974 Noor Juhaidah   Civil Engineering   67.3
 2501882 Anastasia Foo   Software Engineering    69.9
-2501741 Low Li Xuan Digital Supply Chain    95.8
+2501741 Low LiXuan Digital Supply Chain    95.8
 2501837 Sheryn Kong Accounting      99.9
 2501954 Tiffany Tan Computer Science    50.8
 2201354 Sky Teo     Nursing     76.4

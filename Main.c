@@ -291,8 +291,8 @@ void show_help(void){
     printf("\nAvailable Commands:\n");
     printf("  OPEN <filename>   -> open the database file and read in all records\n");
     printf("  SHOW ALL          -> display all current records in memory\n");
-    printf("       SORT BY ID [ASC|DESC]\n");
-    printf("       SORT BY MARK [ASC|DESC]\n");
+    printf("  SORT BY ID[ASC|DESC] -> sort all current records in memory by ID\n");
+    printf("  SORT BY MARK[ASC|DESC]-> sort all current records in memory by Mark\n");
     printf("  INSERT            -> insert a new record (prompts every column)\n");
     printf("  QUERY ID=<n>      -> search for a record with a given student ID\n");
     printf("  UPDATE ID=<n>     -> update the data (prompts every column; Enter keeps)\n");
@@ -341,7 +341,7 @@ void cmd_show_all(const char *args){
 
     printf("CMS: Here are all the records.\n");
     printf("%-10s %-20s %-25s %-6s\n", "ID","Name","Programme","Mark");
-
+    
     for(int i=0;i<g_count;i++){
         printf("%-10d %-20s %-25s %-6.1f\n",
                g_students[i].id,
