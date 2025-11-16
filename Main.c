@@ -10,7 +10,15 @@
 //  UPDATE ID=<n>    -> update record (Enter = keep current)
 //  DELETE ID=<n>    -> delete record (double-confirm)
 //  SAVE             -> save all current records back into the file
+//  UNDO             -> revert the last INSERT, UPDATE, or DELETE operation   <-- Unique Feature
 //  HELP / EXIT
+
+// Unique Feature Implemented:
+//  UNDO — This feature keeps an internal stack of the most recent modifying actions 
+//          (INSERT, UPDATE, DELETE) and allows the user to revert the most recent change.
+//          Demonstrates use of structs, arrays, state management, and integration with CMS logic.
+
+
 
 #define _CRT_SECURE_NO_WARNINGS
 #include <stdio.h>
@@ -31,6 +39,16 @@ typedef struct {
     char  programme[PROG_MAX_LEN];
     float mark;
 } Student;
+
+/* ---------- UNDO FEATURE STRUCTURE ---------- */
+typedef struct {
+    char op;          // 'I' (insert), 'U' (update), 'D' (delete)
+    Student before;   // State BEFORE modification
+    Student after;    // State AFTER modification
+} UndoEntry;
+
+UndoEntry g_undo[1000];
+int g_undo_count = 0;
 
 /* ---------- Globals ---------- */
 Student g_students[MAX_STUDENTS];
@@ -58,6 +76,15 @@ int find_index_by_id(int id){
     for(int i=0;i<g_count;++i)
         if(g_students[i].id == id) return i;
     return -1;
+}
+
+/* ---------- UNDO helper ---------- */
+void push_undo(char op, Student before, Student after) {
+    if (g_undo_count >= 1000) return; // prevent overflow
+    g_undo[g_undo_count].op = op;
+    g_undo[g_undo_count].before = before;
+    g_undo[g_undo_count].after = after;
+    g_undo_count++;
 }
 
 /* ---------- Sorting (Bubble Sort) ---------- */
@@ -298,6 +325,7 @@ void show_help(void){
     printf("  UPDATE ID=<n>     -> update the data (prompts every column; Enter keeps)\n");
     printf("  DELETE ID=<n>     -> delete the record (double confirm)\n");
     printf("  SAVE              -> save all current records into the database file\n");
+    printf("  UNDO              -> undo the last INSERT, UPDATE, or DELETE\n");
     printf("  HELP / EXIT       -> help or quit\n\n");
 }
 
@@ -414,6 +442,7 @@ void cmd_insert(const char *args){
     s.mark=mark;
 
     g_students[g_count++] = s;
+    push_undo('I', s, s);     // UNDO support for INSERT
     printf("CMS: Record inserted.\n");
 }
 
@@ -462,6 +491,8 @@ void cmd_update(const char *args){
 
     Student *s=&g_students[idx];
 
+    Student old = *s;   // store BEFORE state
+
     char newName[NAME_MAX_LEN]="";
     char newProg[PROG_MAX_LEN]="";
 
@@ -473,6 +504,7 @@ void cmd_update(const char *args){
 
     s->mark = prompt_edit_float("Enter new Mark", s->mark);
 
+    push_undo('U', old, *s);   // store BEFORE & AFTER for undo
     printf("CMS: Record updated.\n");
 }
 
@@ -501,6 +533,9 @@ void cmd_delete(const char *args){
         return;
     }
 
+    Student removed = g_students[idx];
+    push_undo('D', removed, removed);   // UNDO for DELETE
+
     for(int i=idx;i<g_count-1;i++)
         g_students[i]=g_students[i+1];
     g_count--;
@@ -520,6 +555,54 @@ void cmd_save(void){
         printf("CMS: Save failed.\n");
 }
 
+/* ---------- UNDO ---------- */
+void cmd_undo(void) {
+    if (g_undo_count == 0) {
+        printf("CMS: Nothing to undo.\n");
+        return;
+    }
+
+    UndoEntry last = g_undo[g_undo_count - 1];
+    g_undo_count--;
+
+    if (last.op == 'I') {
+        // Undo INSERT → remove inserted student
+        int idx = find_index_by_id(last.after.id);
+        if (idx >= 0) {
+            for (int i = idx; i < g_count - 1; i++)
+                g_students[i] = g_students[i + 1];
+            g_count--;
+        }
+        printf("CMS: Undo successful (INSERT undone).\n");
+    }
+
+    else if (last.op == 'D') {
+        // Undo DELETE → restore deleted student
+        if (g_count < MAX_STUDENTS) {
+            g_students[g_count++] = last.before;
+            printf("CMS: Undo successful (DELETE undone).\n");
+        } else {
+            printf("CMS: Undo failed (storage full).\n");
+        }
+    }
+
+    else if (last.op == 'U') {
+        // Undo UPDATE → revert back to old state
+        int idx = find_index_by_id(last.after.id);
+        if (idx >= 0) {
+            g_students[idx] = last.before;
+            printf("CMS: Undo successful (UPDATE undone).\n");
+        } else {
+            printf("CMS: Undo failed (record not found).\n");
+        }
+    }
+
+    else {
+        printf("CMS: Undo failed (unknown operation).\n");
+    }
+}
+
+/* ---------- PRINT DECLARATION ---------- */
 void print_declaration(void){
     FILE *fp=fopen("declaration.txt","r");
     if(!fp){
@@ -577,6 +660,7 @@ int main(void){
         else if(equals_ic(cmd,"UPDATE")) cmd_update(p);
         else if(equals_ic(cmd,"DELETE")) cmd_delete(p);
         else if(equals_ic(cmd,"SAVE"))   cmd_save();
+        else if(equals_ic(cmd,"UNDO"))   cmd_undo();
         else printf("CMS: Unknown command.\n");
     }
 
