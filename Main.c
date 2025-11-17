@@ -18,13 +18,13 @@
 //          (INSERT, UPDATE, DELETE) and allows the user to revert the most recent change.
 //          Demonstrates use of structs, arrays, state management, and integration with CMS logic.
 
-
-
 #define _CRT_SECURE_NO_WARNINGS
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
+#include <math.h>   // for roundf()
+
 
 /* ---------- Simple configuration ---------- */
 #define MAX_STUDENTS 1000
@@ -417,38 +417,139 @@ float prompt_float(const char *label){
         printf("Invalid number.\n");
     }
 }
+// ================== NEW VALIDATION FUNCTIONS ==================
 
+// Check string contains only letters and spaces (no digits/symbols)
+int is_alpha_space(const char *s){
+    if (s[0] == '\0') return 0; // empty not allowed
+
+    for (int i = 0; s[i] != '\0'; i++){
+        unsigned char c = (unsigned char)s[i];
+        if (!isalpha(c) && !isspace(c)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+// NEW: validate student ID (must start with 2 + 7 digits)
+int prompt_student_id(void){
+    char buf[64];
+
+    while(1){
+        printf("Enter student ID: ");
+        if(!fgets(buf,sizeof(buf),stdin)) return 0;
+        rstrip(buf);
+        trim(buf);
+
+        int len = strlen(buf);
+        int ok = 1;
+
+        if(len != 7 || buf[0] != '2'){
+            ok = 0;
+        } else {
+            for(int i=0;i<len;i++){
+                if(!isdigit((unsigned char)buf[i])){
+                    ok = 0;
+                    break;
+                }
+            }
+        }
+
+        if(!ok){
+            printf("Error: Student ID must start with 2 and have exactly 7 digits.\n");
+            continue;
+        }
+
+        return (int)strtol(buf,NULL,10);
+    }
+}
+
+// NEW: validate and round mark to 1 decimal place
+float prompt_mark(const char *label){
+    char buf[64];
+
+    while(1){
+        printf("%s", label);
+        if(!fgets(buf,sizeof(buf),stdin)) return 0;
+        rstrip(buf);
+        trim(buf);
+
+        char *e;
+        float v = strtof(buf,&e);
+
+        if(*e=='\0'){
+            v = roundf(v * 10.0f) / 10.0f; // round to 1dp
+            return v;
+        }
+
+        printf("Invalid number.\n");
+    }
+}
+
+// NEW: validated name input (letters + spaces)
+void prompt_name(char *out, size_t outsz){
+    while(1){
+        prompt_string("Enter Name: ", out, outsz);
+
+        if(is_alpha_space(out)){
+            return;
+        }
+        printf("Error: Name must contain only letters and spaces.\n");
+    }
+}
+
+// NEW: validated programme input (letters + spaces)
+void prompt_programme(char *out, size_t outsz){
+    while(1){
+        prompt_string("Enter Programme: ", out, outsz);
+
+        if(is_alpha_space(out)){
+            return;
+        }
+        printf("Error: Programme must contain only letters and spaces.\n");
+    }
+}
+
+/* ---------- INSERT ---------- */
 void cmd_insert(const char *args){
-    if(g_count>=MAX_STUDENTS){
+    if(g_count >= MAX_STUDENTS){
         printf("CMS: Storage full.\n");
         return;
     }
 
-    int id = prompt_int("Enter student ID: ");
+    int id;
 
-    if(find_index_by_id(id)>=0){
-        printf("CMS: Same ID exists. Insert cancelled.\n");
-        return;
+    // Validate ID + check duplicate
+    while(1){
+        id = prompt_student_id();
+        if(find_index_by_id(id) >= 0){
+            printf("Error: This ID exists.\n");
+        } else {
+            break;
+        }
     }
 
     char name[NAME_MAX_LEN];
     char prog[PROG_MAX_LEN];
     float mark;
 
-    prompt_string("Enter Name: ", name, sizeof(name));
-    prompt_string("Enter Programme: ", prog, sizeof(prog));
-    mark = prompt_float("Enter Mark: ");
+    // NEW VALIDATED INPUTS
+    prompt_name(name, sizeof(name));
+    prompt_programme(prog, sizeof(prog));
+    mark = prompt_mark("Enter Mark: ");
 
     Student s;
-    s.id=id;
+    s.id = id;
     strncpy(s.name,name,NAME_MAX_LEN-1);
     s.name[NAME_MAX_LEN-1]=0;
     strncpy(s.programme,prog,PROG_MAX_LEN-1);
     s.programme[PROG_MAX_LEN-1]=0;
-    s.mark=mark;
+    s.mark = mark;
 
     g_students[g_count++] = s;
-    push_undo('I', s, s);     // UNDO support for INSERT
+    push_undo('I', s, s);
+
     printf("CMS: Record inserted.\n");
 }
 
