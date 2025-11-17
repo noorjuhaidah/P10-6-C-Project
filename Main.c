@@ -17,6 +17,13 @@
 //  UNDO — This feature keeps an internal stack of the most recent modifying actions 
 //          (INSERT, UPDATE, DELETE) and allows the user to revert the most recent change.
 //          Demonstrates use of structs, arrays, state management, and integration with CMS logic.
+//  LOGIN — This feature allows users to securely authenticate as either an admin or a student 
+//          by providing a valid username and password. Admin users can access all CMS features 
+//          (INSERT, DELETE, UPDATE, SAVE), while students have restricted access (can only view records).
+//          The login process is protected by a limit of 5 attempts, after which the system locks further login attempts.
+//          Demonstrates use of input validation, role-based access control, security measures in user authentication,
+//          and a mechanism to prevent brute force attacks through the attempt limitation.
+
 
 #define _CRT_SECURE_NO_WARNINGS
 #include <stdio.h>
@@ -24,7 +31,9 @@
 #include <ctype.h>
 #include <stdlib.h>
 #include <math.h>   // for roundf()
-
+#define ADMIN_USERNAME "admin"
+#define ADMIN_PASSWORD "AdminDb@2025!"  // Unique admin password
+#define STUDENT_USERNAME "student"
 
 /* ---------- Simple configuration ---------- */
 #define MAX_STUDENTS 1000
@@ -54,28 +63,98 @@ int g_undo_count = 0;
 Student g_students[MAX_STUDENTS];
 int     g_count = 0;
 char    g_open_filename[260] = "";
+int     g_is_admin = 0; // 0 - student, 1 - admin
 
 /* ---------- Helper functions ---------- */
-void rstrip(char *s){
+void rstrip(char *s) {
     size_t n = strlen(s);
-    while(n && (s[n-1]=='\n' || s[n-1]=='\r')) s[--n]='\0';
+    while (n && (s[n - 1] == '\n' || s[n - 1] == '\r')) s[--n] = '\0';
 }
-void trim(char *s){
-    size_t i=0; while(s[i] && isspace((unsigned char)s[i])) i++;
-    if(i) memmove(s, s+i, strlen(s+i)+1);
-    size_t n=strlen(s); while(n && isspace((unsigned char)s[n-1])) s[--n]='\0';
+
+void trim(char *s) {
+    size_t i = 0;
+    while (s[i] && isspace((unsigned char)s[i])) i++;
+    if (i) memmove(s, s + i, strlen(s + i) + 1);
+    size_t n = strlen(s); while (n && isspace((unsigned char)s[n - 1])) s[--n] = '\0';
 }
-int equals_ic(const char *a, const char *b){
-    while(*a && *b){
-        if(toupper((unsigned char)*a)!=toupper((unsigned char)*b)) return 0;
+
+int equals_ic(const char *a, const char *b) {
+    while (*a && *b) {
+        if (toupper((unsigned char)*a) != toupper((unsigned char)*b)) return 0;
         a++; b++;
     }
-    return *a=='\0' && *b=='\0';
+    return *a == '\0' && *b == '\0';
 }
-int find_index_by_id(int id){
-    for(int i=0;i<g_count;++i)
-        if(g_students[i].id == id) return i;
+
+int find_index_by_id(int id) {
+    for (int i = 0; i < g_count; ++i)
+        if (g_students[i].id == id) return i;
     return -1;
+}
+
+/* ---------- User Login Function ---------- */
+int login() {
+    char username[64], password[64];
+    int attempts = 5;  // Max attempts: 5 total attempts (for password only)
+
+    while (attempts > 0) {
+        printf("Enter username: ");
+        fgets(username, sizeof(username), stdin);
+        rstrip(username);
+
+        // Check for invalid username
+        if (!equals_ic(username, ADMIN_USERNAME) && !equals_ic(username, STUDENT_USERNAME)) {
+            printf("Invalid username. Please enter a valid username.\n");
+            continue; // Skip password check and allow retry without decrementing attempts
+        }
+
+        // Admin login
+        if (equals_ic(username, ADMIN_USERNAME)) {
+            printf("Enter password: ");
+            fgets(password, sizeof(password), stdin);
+            rstrip(password);
+
+            if (equals_ic(password, ADMIN_PASSWORD)) {
+                g_is_admin = 1;  // Admin login
+                return 1;
+            } else {
+                printf("Invalid admin password. Try again.\n");
+            }
+        }
+
+        // Student login
+        else if (equals_ic(username, STUDENT_USERNAME)) {
+            printf("Enter student ID as password: ");
+            fgets(password, sizeof(password), stdin);
+            rstrip(password);
+
+            // Check if the password matches the student ID format (starts with '2' and has 7 digits)
+            if (strlen(password) == 7 && password[0] == '2' && 
+                isdigit((unsigned char)password[1]) && 
+                isdigit((unsigned char)password[2]) &&
+                isdigit((unsigned char)password[3]) &&
+                isdigit((unsigned char)password[4]) &&
+                isdigit((unsigned char)password[5]) &&
+                isdigit((unsigned char)password[6])) {
+                g_is_admin = 0;  // Student login
+                return 1;
+            } else {
+                printf("Invalid student ID. Try again.\n");
+            }
+        }
+
+        // If password is invalid, decrease the attempts
+        printf("You have %d attempt(s) left.\n", attempts - 1);
+        attempts--;  // Decrease the remaining attempts
+
+        // Exit after 0 attempts left with a more professional message
+        if (attempts == 0) {
+            printf("Maximum login attempts reached. Access to the system has been temporarily locked. Please try again later or contact support.\n");
+            return 0;  // Exit the program after exceeding max attempts
+        }
+    }
+
+    return 0;  // If all attempts are exhausted, return failure
 }
 
 /* ---------- UNDO helper ---------- */
@@ -928,69 +1007,102 @@ void print_declaration(void){
 }
 
 /* ---------- MAIN ---------- */
-int main(void){
+int main(void) {
+    // Call the login function
+    if (!login()) return 0;  // If login fails, exit the program
+
     print_declaration();
     show_help();
 
     char line[LINE_MAX_LEN];
 
-    while(1){
+    while (1) {
         printf("> ");
-        if(!fgets(line,sizeof(line),stdin)) break;
+        if (!fgets(line, sizeof(line), stdin)) break;
         rstrip(line);
-        if(line[0]=='\0') continue;
+        if (line[0] == '\0') continue;
 
         char cmd[64];
-        int i=0;
-        const char *p=line;
+        int i = 0;
+        const char *p = line;
 
-        while(*p && isspace((unsigned char)*p)) p++;
-        while(*p && !isspace((unsigned char)*p) && i<63)
-            cmd[i++]=*p++;
-        cmd[i]=0;
-        while(*p && isspace((unsigned char)*p)) p++;
+        while (*p && isspace((unsigned char)*p)) p++;
+        while (*p && !isspace((unsigned char)*p) && i < 63)
+            cmd[i++] = *p++;
+        cmd[i] = 0;
+        while (*p && isspace((unsigned char)*p)) p++;
 
-        if(equals_ic(cmd,"EXIT")) break;
-        else if(equals_ic(cmd,"HELP")) show_help();
-        else if(equals_ic(cmd,"OPEN")) cmd_open(p);
+        // Command processing
+        if (equals_ic(cmd, "EXIT")) break;
+        else if (equals_ic(cmd, "HELP")) show_help();
+        else if (equals_ic(cmd, "OPEN")) cmd_open(p);
         else if (equals_ic(cmd, "SHOW")) {
-    if (*p == '\0') {
-        printf("CMS: Use SHOW ALL or SHOW SUMMARY.\n");
-    } else {
-        // Take the first word after SHOW (ALL or SUMMARY)
-        char first[16];
-        int fi = 0;
-        const char *q = p;
+            if (*p == '\0') {
+                printf("CMS: Use SHOW ALL or SHOW SUMMARY.\n");
+            } else {
+                // Handle SHOW commands
+                char first[16];
+                int fi = 0;
+                const char *q = p;
 
-        // copy until next space
-        while (*q && !isspace((unsigned char)*q) && fi < (int)sizeof(first) - 1) {
-            first[fi++] = *q++;
+                while (*q && !isspace((unsigned char)*q) && fi < (int)sizeof(first) - 1) {
+                    first[fi++] = *q++;
+                }
+                first[fi] = '\0';
+                while (*q && isspace((unsigned char)*q)) q++;
+
+                if (equals_ic(first, "ALL")) {
+                    cmd_show_all(q);
+                } else if (equals_ic(first, "SUMMARY")) {
+                    cmd_show_summary();
+                } else {
+                    printf("CMS: Use SHOW ALL or SHOW SUMMARY.\n");
+                }
+            }
         }
-        first[fi] = '\0';
-
-        // skip spaces after that word
-        while (*q && isspace((unsigned char)*q)) q++;
-
-        if (equals_ic(first, "ALL")) {
-            // q now points to the rest after ALL
-            // e.g. "" or "SORT BY ID DESC"
-            cmd_show_all(q);
-        } else if (equals_ic(first, "SUMMARY")) {
-            cmd_show_summary();
-        } else {
-            printf("CMS: Use SHOW ALL or SHOW SUMMARY.\n");
+        else if (equals_ic(cmd, "INSERT")) {
+            if (g_is_admin) {
+                cmd_insert(p); // Only admins can insert records
+            } else {
+                printf("You do not have permission to insert records.\n"); // Students cannot insert
+            }
         }
-    }
-}
-
-        else if(equals_ic(cmd,"INSERT")) cmd_insert(p);
-        else if(equals_ic(cmd,"QUERY"))  cmd_query(p);
-        else if(equals_ic(cmd,"UPDATE")) cmd_update(p);
-        else if(equals_ic(cmd,"DELETE")) cmd_delete(p);
-        else if(equals_ic(cmd,"SAVE"))   cmd_save();
-        else if(equals_ic(cmd,"UNDO"))   cmd_undo();
-        else printf("CMS: Unknown command.\n");
+        else if (equals_ic(cmd, "DELETE")) {
+            if (g_is_admin) {
+                cmd_delete(p); // Only admins can delete records
+            } else {
+                printf("You do not have permission to delete records.\n"); // Students cannot delete
+            }
+        }
+        else if (equals_ic(cmd, "UNDO")) {
+            if (g_is_admin) {
+                cmd_undo(); // Only admins can undo actions
+            } else {
+                printf("You do not have permission to undo actions.\n"); // Students cannot undo
+            }
+        }
+        else if (equals_ic(cmd, "SAVE")) {
+            if (g_is_admin) {
+                cmd_save(); // Only admins can save changes
+            } else {
+                printf("You do not have permission to save changes.\n"); // Students cannot save
+            }
+        }
+        else if (equals_ic(cmd, "QUERY")) {
+            cmd_query(p);
+        }
+        else if (equals_ic(cmd, "UPDATE")) {
+            if (g_is_admin) {
+                cmd_update(p);  // Only admins can update records
+            } else {
+                printf("You do not have permission to update records.\n");  // Students cannot update
+            }
+        }
+        else {
+            printf("CMS: Unknown command or insufficient permissions.\n");
+        }
     }
 
     return 0;
 }
+
