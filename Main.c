@@ -316,20 +316,24 @@ int save_to_file(const char *filename){
 /* ===================== COMMANDS ===================== */
 void show_help(void){
     printf("\nAvailable Commands:\n");
-    printf("  OPEN <filename>   -> open the database file and read in all records\n");
-    printf("  SHOW ALL          -> display all current records in memory\n");
-    printf("  SORT BY ID[ASC|DESC] -> sort all current records in memory by ID\n");
-    printf("  SORT BY MARK[ASC|DESC]-> sort all current records in memory by Mark\n");
-    printf("  INSERT            -> insert a new record (prompts every column)\n");
-    printf("  QUERY ID=<n>      -> search for a record with a given student ID\n");
-    printf("  UPDATE ID=<n>     -> update the data (prompts every column; Enter keeps)\n");
-    printf("  DELETE ID=<n>     -> delete the record (double confirm)\n");
-    printf("  SAVE              -> save all current records into the database file\n");
-    printf("  UNDO              -> undo the last INSERT, UPDATE, or DELETE\n");
-    printf("  SHOW SUMMARY      -> show total students, average mark,\n");
-    printf("                       highest and lowest mark (with names)\n");
-    printf("  HELP / EXIT       -> help or quit\n\n");
+    printf("  OPEN <filename>              -> open the database file and read in all records\n");
+    printf("\n");
+    printf("  SHOW ALL                     -> display all current records in memory\n");
+    printf("  SHOW ALL SORT BY ID ASC      -> sort by student ID (ascending)\n");
+    printf("  SHOW ALL SORT BY ID DESC     -> sort by student ID (descending)\n");
+    printf("  SHOW ALL SORT BY MARK ASC    -> sort by mark (ascending)\n");
+    printf("  SHOW ALL SORT BY MARK DESC   -> sort by mark (descending)\n");
+    printf("\n");
+    printf("  INSERT                       -> insert a new record (prompts every column)\n");
+    printf("  QUERY ID=<n>                 -> search for a record with a given student ID\n");
+    printf("  UPDATE ID=<n>                -> update the data (prompts every column; Enter keeps)\n");
+    printf("  DELETE ID=<n>                -> delete the record (double confirm)\n");
+    printf("  SAVE                         -> save all current records into the database file\n");
+    printf("  UNDO                         -> undo the last INSERT, UPDATE, or DELETE\n");
+    printf("  SHOW SUMMARY                 -> show total, average mark, highest & lowest\n");
+    printf("  HELP / EXIT                  -> help or quit the program\n\n");
 }
+
 
 /* ---------- OPEN ---------- */
 void cmd_open(const char *args){
@@ -685,14 +689,35 @@ int main(void){
         else if(equals_ic(cmd,"HELP")) show_help();
         else if(equals_ic(cmd,"OPEN")) cmd_open(p);
         else if (equals_ic(cmd, "SHOW")) {
-            if (equals_ic(p, "ALL")) {
-                cmd_show_all(p);
-            } else if (equals_ic(p, "SUMMARY")) {
-                cmd_show_summary();     // <-- new summary function you wrote
-            } else {
-                printf("CMS: Use SHOW ALL or SHOW SUMMARY.\n");
-            }
+    if (*p == '\0') {
+        printf("CMS: Use SHOW ALL or SHOW SUMMARY.\n");
+    } else {
+        // Take the first word after SHOW (ALL or SUMMARY)
+        char first[16];
+        int fi = 0;
+        const char *q = p;
+
+        // copy until next space
+        while (*q && !isspace((unsigned char)*q) && fi < (int)sizeof(first) - 1) {
+            first[fi++] = *q++;
         }
+        first[fi] = '\0';
+
+        // skip spaces after that word
+        while (*q && isspace((unsigned char)*q)) q++;
+
+        if (equals_ic(first, "ALL")) {
+            // q now points to the rest after ALL
+            // e.g. "" or "SORT BY ID DESC"
+            cmd_show_all(q);
+        } else if (equals_ic(first, "SUMMARY")) {
+            cmd_show_summary();
+        } else {
+            printf("CMS: Use SHOW ALL or SHOW SUMMARY.\n");
+        }
+    }
+}
+
         else if(equals_ic(cmd,"INSERT")) cmd_insert(p);
         else if(equals_ic(cmd,"QUERY"))  cmd_query(p);
         else if(equals_ic(cmd,"UPDATE")) cmd_update(p);
