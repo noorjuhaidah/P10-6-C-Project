@@ -551,6 +551,7 @@ void cmd_insert(const char *args){
     push_undo('I', s, s);
 
     printf("CMS: Record inserted.\n");
+    printf("Remember to type SAVE to save your changes.\n");
 }
 
 /* ---------- QUERY ---------- */
@@ -761,6 +762,7 @@ void cmd_update(const char *args){
     push_undo('U', old, *s);
 
     printf("\nCMS: Record updated successfully.\n");
+    printf("Remember to type SAVE to save your changes.\n");
 
     /* ===========================
        SHOW UPDATED RECORD
@@ -806,6 +808,7 @@ void cmd_delete(const char *args){
     g_count--;
 
     printf("CMS: Record deleted.\n");
+    printf("Remember to type SAVE to save your changes.\n");
 }
 
 /* ---------- SAVE ---------- */
@@ -839,6 +842,7 @@ void cmd_undo(void) {
             g_count--;
         }
         printf("CMS: Undo successful (INSERT undone).\n");
+        printf("Remember to type SAVE to save your changes.\n");
     }
 
     else if (last.op == 'D') {
@@ -846,6 +850,7 @@ void cmd_undo(void) {
         if (g_count < MAX_STUDENTS) {
             g_students[g_count++] = last.before;
             printf("CMS: Undo successful (DELETE undone).\n");
+            printf("Remember to type SAVE to save your changes.\n");
         } else {
             printf("CMS: Undo failed (storage full).\n");
         }
@@ -857,6 +862,7 @@ void cmd_undo(void) {
         if (idx >= 0) {
             g_students[idx] = last.before;
             printf("CMS: Undo successful (UPDATE undone).\n");
+            printf("Remember to type SAVE to save your changes.\n");
         } else {
             printf("CMS: Undo failed (record not found).\n");
         }
