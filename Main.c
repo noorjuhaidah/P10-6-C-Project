@@ -570,50 +570,208 @@ void cmd_query(const char *args){
 }
 
 /* ---------- UPDATE ---------- */
-float prompt_edit_float(const char *label,float cur){
-    char buf[64];
-    printf("%s (current %.1f) -> ",label,cur);
-    if(!fgets(buf,sizeof(buf),stdin)) return cur;
-    rstrip(buf); trim(buf);
-    if(buf[0]=='\0') return cur;
-    char *e; float v=strtof(buf,&e);
-    if(*e=='\0') return v;
-    printf("Invalid. Keeping old.\n");
-    return cur;
-}
-void prompt_edit_string(const char *label,const char*cur,char*out,size_t outsz){
-    printf("%s (current: %s) -> ",label,cur);
-    if(!fgets(out,outsz,stdin)){ out[0]=0; return; }
-    rstrip(out); trim(out);
+/* ---------- YES/NO VALIDATOR ---------- */
+int prompt_yes_no(const char *msg) {
+    char buf[16];
+    while (1) {
+        printf("%s (Y/N): ", msg);
+        if (!fgets(buf, sizeof(buf), stdin)) continue;
+        rstrip(buf);
+        trim(buf);
+
+        if (toupper(buf[0]) == 'Y') return 1;
+        if (toupper(buf[0]) == 'N') return 0;
+
+        printf("Invalid choice. Please enter Y or N.\n");
+    }
 }
 
+/* ---------- UPDATE (fully rewritten) ---------- */
 void cmd_update(const char *args){
     int id = prompt_int("Enter student ID to update: ");
     int idx = find_index_by_id(id);
 
-    if(idx<0){
+    if (idx < 0) {
         printf("CMS: No record found.\n");
         return;
     }
 
-    Student *s=&g_students[idx];
+    Student *s = &g_students[idx];
 
-    Student old = *s;   // store BEFORE state
+    /* ----- Show record BEFORE update ----- */
+    printf("\nRecord found:\n");
+    printf("ID      : %d\n", s->id);
+    printf("Name    : %s\n", s->name);
+    printf("Programme: %s\n", s->programme);
+    printf("Mark    : %.1f\n\n", s->mark);
 
-    char newName[NAME_MAX_LEN]="";
-    char newProg[PROG_MAX_LEN]="";
+    Student old = *s;     // backup for undo
+    Student updated = *s; // temp copy for editing
 
-    prompt_edit_string("Enter new Name", s->name, newName, sizeof(newName));
-    if(newName[0]) strncpy(s->name,newName,sizeof(s->name)-1);
+    int changed = 0;
 
-    prompt_edit_string("Enter new Programme", s->programme, newProg, sizeof(newProg));
-    if(newProg[0]) strncpy(s->programme,newProg,sizeof(s->programme)-1);
+    /* ===========================
+       UPDATE STUDENT ID
+       =========================== */
+    if (prompt_yes_no("Do you want to update the student ID?")) {
 
-    s->mark = prompt_edit_float("Enter new Mark", s->mark);
+        int newID;
 
-    push_undo('U', old, *s);   // store BEFORE & AFTER for undo
-    printf("CMS: Record updated.\n");
+        while (1) {
+            newID = prompt_student_id();  // validated student ID format
+
+            // ensure this ID isn't used by other students
+            int exist = find_index_by_id(newID);
+            if (exist >= 0 && exist != idx) {
+                printf("Error: This ID already exists.\n");
+                continue;
+            }
+            break;
+        }
+
+        if (newID != updated.id) {
+            updated.id = newID;
+            changed = 1;
+        } else {
+            printf("No change detected for ID.\n");
+        }
+    }
+
+    /* ===========================
+       UPDATE NAME
+       =========================== */
+    if (prompt_yes_no("Do you want to update the Name?")) {
+
+        char temp[NAME_MAX_LEN];
+
+        while (1) {
+            printf("Enter new Name (current: %s): ", updated.name);
+            if (!fgets(temp, sizeof(temp), stdin)) continue;
+            rstrip(temp);
+            trim(temp);
+
+            if (temp[0] == '\0') {
+                printf("Name cannot be empty.\n");
+                continue;
+            }
+
+            if (!is_alpha_space(temp)) {
+                printf("Error: Name must only contain letters and spaces.\n");
+                continue;
+            }
+
+            break;
+        }
+
+        if (strcmp(temp, updated.name) != 0) {
+            strncpy(updated.name, temp, NAME_MAX_LEN - 1);
+            updated.name[NAME_MAX_LEN - 1] = '\0';
+            changed = 1;
+        } else {
+            printf("No change detected for Name.\n");
+        }
+    }
+
+    /* ===========================
+       UPDATE PROGRAMME
+       =========================== */
+    if (prompt_yes_no("Do you want to update the Programme?")) {
+
+        char temp[PROG_MAX_LEN];
+
+        while (1) {
+            printf("Enter new Programme (current: %s): ", updated.programme);
+            if (!fgets(temp, sizeof(temp), stdin)) continue;
+            rstrip(temp);
+            trim(temp);
+
+            if (temp[0] == '\0') {
+                printf("Programme cannot be empty.\n");
+                continue;
+            }
+
+            if (!is_alpha_space(temp)) {
+                printf("Error: Programme must only contain letters and spaces.\n");
+                continue;
+            }
+
+            break;
+        }
+
+        if (strcmp(temp, updated.programme) != 0) {
+            strncpy(updated.programme, temp, PROG_MAX_LEN - 1);
+            updated.programme[PROG_MAX_LEN - 1] = '\0';
+            changed = 1;
+        } else {
+            printf("No change detected for Programme.\n");
+        }
+    }
+
+    /* ===========================
+       UPDATE MARK
+       =========================== */
+    if (prompt_yes_no("Do you want to update the Mark?")) {
+
+        while (1) {
+            char buf[64];
+            printf("Enter new Mark (current: %.1f): ", updated.mark);
+
+            if (!fgets(buf, sizeof(buf), stdin)) continue;
+            rstrip(buf);
+            trim(buf);
+
+            if (buf[0] == '\0') {
+                printf("Mark cannot be empty.\n");
+                continue;
+            }
+
+            char *end;
+            float v = strtof(buf, &end);
+
+            if (*end != '\0' || v < 0 || v > 100) {
+                printf("Invalid mark. Must be 0–100.\n");
+                continue;
+            }
+
+            v = roundf(v * 10.0f) / 10.0f; // 1dp rounding
+
+            if (v != updated.mark) {
+                updated.mark = v;
+                changed = 1;
+            } else {
+                printf("No change detected for Mark.\n");
+            }
+            break;
+        }
+    }
+
+    /* ===========================
+       NO CHANGES?
+       =========================== */
+    if (!changed) {
+        printf("\nCMS: No changes made. Update cancelled.\n");
+        return;
+    }
+
+    /* ===========================
+       APPLY UPDATE + UNDO
+       =========================== */
+    *s = updated; // commit changes
+
+    push_undo('U', old, *s);
+
+    printf("\nCMS: Record updated successfully.\n");
+
+    /* ===========================
+       SHOW UPDATED RECORD
+       =========================== */
+    printf("Updated Record:\n");
+    printf("ID       : %d\n", s->id);
+    printf("Name     : %s\n", s->name);
+    printf("Programme: %s\n", s->programme);
+    printf("Mark     : %.1f\n", s->mark);
 }
+
 
 /* ---------- DELETE ---------- */
 void cmd_delete(const char *args){
