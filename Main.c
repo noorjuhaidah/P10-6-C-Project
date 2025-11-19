@@ -10,13 +10,28 @@
 //  UPDATE ID=<n>    -> update record (Enter = keep current)
 //  DELETE ID=<n>    -> delete record (double-confirm)
 //  SAVE             -> save all current records back into the file
+//  UNDO             -> revert the last INSERT, UPDATE, or DELETE operation   <-- Unique Feature
 //  HELP / EXIT
+
+// Unique Feature Implemented:
+//  UNDO — This feature keeps an internal stack of the most recent modifying actions 
+//          (INSERT, UPDATE, DELETE) and allows the user to revert the most recent change.
+//          Demonstrates use of structs, arrays, state management, and integration with CMS logic.
+
+
+
+
 
 #define _CRT_SECURE_NO_WARNINGS
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
+#include <math.h>   // for roundf()
+#define ADMIN_USERNAME "admin"
+#define ADMIN_PASSWORD "admin"  // admin password
+#define STUDENT_USERNAME "student"
+#define STUDENT_PASSWORD "student"  // student password
 
 /* ---------- Simple configuration ---------- */
 #define MAX_STUDENTS 1000
@@ -32,32 +47,114 @@ typedef struct {
     float mark;
 } Student;
 
+/* ---------- UNDO FEATURE STRUCTURE ---------- */
+typedef struct {
+    char op;          // 'I' (insert), 'U' (update), 'D' (delete)
+    Student before;   // State BEFORE modification
+    Student after;    // State AFTER modification
+} UndoEntry;
+
+UndoEntry g_undo[1000];
+int g_undo_count = 0;
+
 /* ---------- Globals ---------- */
 Student g_students[MAX_STUDENTS];
 int     g_count = 0;
 char    g_open_filename[260] = "";
+int     g_is_admin = 0; // 0 - student, 1 - admin
 
 /* ---------- Helper functions ---------- */
-void rstrip(char *s){
+void rstrip(char *s) {
     size_t n = strlen(s);
-    while(n && (s[n-1]=='\n' || s[n-1]=='\r')) s[--n]='\0';
+    while (n && (s[n - 1] == '\n' || s[n - 1] == '\r')) s[--n] = '\0';
 }
-void trim(char *s){
-    size_t i=0; while(s[i] && isspace((unsigned char)s[i])) i++;
-    if(i) memmove(s, s+i, strlen(s+i)+1);
-    size_t n=strlen(s); while(n && isspace((unsigned char)s[n-1])) s[--n]='\0';
+
+void trim(char *s) {
+    size_t i = 0;
+    while (s[i] && isspace((unsigned char)s[i])) i++;
+    if (i) memmove(s, s + i, strlen(s + i) + 1);
+    size_t n = strlen(s); while (n && isspace((unsigned char)s[n - 1])) s[--n] = '\0';
 }
-int equals_ic(const char *a, const char *b){
-    while(*a && *b){
-        if(toupper((unsigned char)*a)!=toupper((unsigned char)*b)) return 0;
+
+int equals_ic(const char *a, const char *b) {
+    while (*a && *b) {
+        if (toupper((unsigned char)*a) != toupper((unsigned char)*b)) return 0;
         a++; b++;
     }
-    return *a=='\0' && *b=='\0';
+    return *a == '\0' && *b == '\0';
 }
-int find_index_by_id(int id){
-    for(int i=0;i<g_count;++i)
-        if(g_students[i].id == id) return i;
+
+int find_index_by_id(int id) {
+    for (int i = 0; i < g_count; ++i)
+        if (g_students[i].id == id) return i;
     return -1;
+}
+
+/* ---------- User Login Function ---------- */
+int login() {
+    char username[64], password[64];
+    int attempts = 5;  // Max attempts: 5 total attempts (for password only)
+
+    while (attempts > 0) {
+        printf("Enter username: ");
+        fgets(username, sizeof(username), stdin);
+        rstrip(username);
+
+        // Check for invalid username
+        if (!equals_ic(username, ADMIN_USERNAME) && !equals_ic(username, STUDENT_USERNAME)) {
+            printf("Invalid username. Please enter a valid username.\n");
+            continue; // Skip password check and allow retry without decrementing attempts
+        }
+
+        // Admin login
+        if (equals_ic(username, ADMIN_USERNAME)) {
+            printf("Enter password: ");
+            fgets(password, sizeof(password), stdin);
+            rstrip(password);
+
+            if (equals_ic(password, ADMIN_PASSWORD)) {
+                g_is_admin = 1;  // Admin login
+                return 1;
+            } else {
+                printf("Invalid admin password. Try again.\n");
+            }
+        }
+
+        // Student login
+        else if (equals_ic(username, STUDENT_USERNAME)) {
+            printf("Enter password: ");
+            fgets(password, sizeof(password), stdin);
+            rstrip(password);
+
+            if (equals_ic(password, STUDENT_PASSWORD)) {
+                g_is_admin = 0;  // Student login
+                return 1;
+            } else {
+                printf("Invalid student password. Try again.\n");
+            }
+        }      
+
+        // If password is invalid, decrease the attempts
+        printf("You have %d attempt(s) left.\n", attempts - 1);
+        attempts--;  // Decrease the remaining attempts
+
+        // Exit after 0 attempts left with a more professional message
+        if (attempts == 0) {
+            printf("Maximum login attempts reached. Access to the system has been temporarily locked. Please try again later or contact support.\n");
+            return 0;  // Exit the program after exceeding max attempts
+        }
+    }
+
+    return 0;  // If all attempts are exhausted, return failure
+}
+
+/* ---------- UNDO helper ---------- */
+void push_undo(char op, Student before, Student after) {
+    if (g_undo_count >= 1000) return; // prevent overflow
+    g_undo[g_undo_count].op = op;
+    g_undo[g_undo_count].before = before;
+    g_undo[g_undo_count].after = after;
+    g_undo_count++;
 }
 
 /* ---------- Sorting (Bubble Sort) ---------- */
@@ -289,16 +386,37 @@ int save_to_file(const char *filename){
 /* ===================== COMMANDS ===================== */
 void show_help(void){
     printf("\nAvailable Commands:\n");
-    printf("  OPEN <filename>   -> open the database file and read in all records\n");
-    printf("  SHOW ALL          -> display all current records in memory\n");
-    printf("  SORT BY ID[ASC|DESC] -> sort all current records in memory by ID\n");
-    printf("  SORT BY MARK[ASC|DESC]-> sort all current records in memory by Mark\n");
-    printf("  INSERT            -> insert a new record (prompts every column)\n");
-    printf("  QUERY ID=<n>      -> search for a record with a given student ID\n");
-    printf("  UPDATE ID=<n>     -> update the data (prompts every column; Enter keeps)\n");
-    printf("  DELETE ID=<n>     -> delete the record (double confirm)\n");
-    printf("  SAVE              -> save all current records into the database file\n");
-    printf("  HELP / EXIT       -> help or quit\n\n");
+    printf("  OPEN <filename>              -> open the database file and read in all records\n");
+    printf("\n");
+    printf("  SHOW ALL                     -> display all current records in memory\n");
+    printf("  SHOW ALL SORT BY ID ASC      -> sort by student ID (ascending)\n");
+    printf("  SHOW ALL SORT BY ID DESC     -> sort by student ID (descending)\n");
+    printf("  SHOW ALL SORT BY MARK ASC    -> sort by mark (ascending)\n");
+    printf("  SHOW ALL SORT BY MARK DESC   -> sort by mark (descending)\n");
+    printf("\n");
+    printf("  INSERT                       -> insert a new record (prompts every column)\n");
+    printf("  QUERY ID=<n>                 -> search for a record with a given student ID\n");
+    printf("  UPDATE ID=<n>                -> update the data (prompts every column; Enter keeps)\n");
+    printf("  DELETE ID=<n>                -> delete the record (double confirm)\n");
+    printf("  SAVE                         -> save all current records into the database file\n");
+    printf("  UNDO                         -> undo the last INSERT, UPDATE, or DELETE\n");
+    printf("  SHOW SUMMARY                 -> show total, average mark, highest & lowest\n");
+    printf("  HELP / EXIT                  -> help or quit the program\n\n");
+}
+
+void show_help_student(void){
+    printf("\nAvailable Commands (Student Access Only):\n");
+    printf("  OPEN <filename>              -> open the database file and read in all records\n");
+    printf("\n");
+    printf("  SHOW ALL                     -> display all current records in memory\n");
+    printf("  SHOW ALL SORT BY ID ASC      -> sort by student ID (ascending)\n");
+    printf("  SHOW ALL SORT BY ID DESC     -> sort by student ID (descending)\n");
+    printf("  SHOW ALL SORT BY MARK ASC    -> sort by mark (ascending)\n");
+    printf("  SHOW ALL SORT BY MARK DESC   -> sort by mark (descending)\n");
+    printf("\n");
+    printf("  QUERY ID=<n>                 -> search for a specific student record\n");
+    printf("  SHOW SUMMARY                 -> show total, average, highest & lowest marks\n");
+    printf("  HELP / EXIT                  -> display help or exit the program\n\n");
 }
 
 /* ---------- OPEN ---------- */
@@ -383,38 +501,141 @@ float prompt_float(const char *label){
         printf("Invalid number.\n");
     }
 }
+// ================== NEW VALIDATION FUNCTIONS ==================
 
+// Check string contains only letters and spaces (no digits/symbols)
+int is_alpha_space(const char *s){
+    if (s[0] == '\0') return 0; // empty not allowed
+
+    for (int i = 0; s[i] != '\0'; i++){
+        unsigned char c = (unsigned char)s[i];
+        if (!isalpha(c) && !isspace(c)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+// NEW: validate student ID (must start with 2 + 7 digits)
+int prompt_student_id(void){
+    char buf[64];
+
+    while(1){
+        printf("Enter student ID: ");
+        if(!fgets(buf,sizeof(buf),stdin)) return 0;
+        rstrip(buf);
+        trim(buf);
+
+        int len = strlen(buf);
+        int ok = 1;
+
+        if(len != 7 || buf[0] != '2'){
+            ok = 0;
+        } else {
+            for(int i=0;i<len;i++){
+                if(!isdigit((unsigned char)buf[i])){
+                    ok = 0;
+                    break;
+                }
+            }
+        }
+
+        if(!ok){
+            printf("Error: Student ID must start with 2 and have exactly 7 digits.\n");
+            continue;
+        }
+
+        return (int)strtol(buf,NULL,10);
+    }
+}
+
+// NEW: validate and round mark to 1 decimal place
+float prompt_mark(const char *label){
+    char buf[64];
+
+    while(1){
+        printf("%s", label);
+        if(!fgets(buf,sizeof(buf),stdin)) return 0;
+        rstrip(buf);
+        trim(buf);
+
+        char *e;
+        float v = strtof(buf,&e);
+
+        if(*e=='\0'){
+            v = roundf(v * 10.0f) / 10.0f; // round to 1dp
+            return v;
+        }
+
+        printf("Invalid number.\n");
+    }
+}
+
+// NEW: validated name input (letters + spaces)
+void prompt_name(char *out, size_t outsz){
+    while(1){
+        prompt_string("Enter Name: ", out, outsz);
+
+        if(is_alpha_space(out)){
+            return;
+        }
+        printf("Error: Name must contain only letters and spaces.\n");
+    }
+}
+
+// NEW: validated programme input (letters + spaces)
+void prompt_programme(char *out, size_t outsz){
+    while(1){
+        prompt_string("Enter Programme: ", out, outsz);
+
+        if(is_alpha_space(out)){
+            return;
+        }
+        printf("Error: Programme must contain only letters and spaces.\n");
+    }
+}
+
+/* ---------- INSERT ---------- */
 void cmd_insert(const char *args){
-    if(g_count>=MAX_STUDENTS){
+    if(g_count >= MAX_STUDENTS){
         printf("CMS: Storage full.\n");
         return;
     }
 
-    int id = prompt_int("Enter student ID: ");
+    int id;
 
-    if(find_index_by_id(id)>=0){
-        printf("CMS: Same ID exists. Insert cancelled.\n");
-        return;
+    // Validate ID + check duplicate
+    while(1){
+        id = prompt_student_id();
+        if(find_index_by_id(id) >= 0){
+            printf("Error: This ID exists.\n");
+        } else {
+            break;
+        }
     }
 
     char name[NAME_MAX_LEN];
     char prog[PROG_MAX_LEN];
     float mark;
 
-    prompt_string("Enter Name: ", name, sizeof(name));
-    prompt_string("Enter Programme: ", prog, sizeof(prog));
-    mark = prompt_float("Enter Mark: ");
+    // NEW VALIDATED INPUTS
+    prompt_name(name, sizeof(name));
+    prompt_programme(prog, sizeof(prog));
+    mark = prompt_mark("Enter Mark: ");
 
     Student s;
-    s.id=id;
+    s.id = id;
     strncpy(s.name,name,NAME_MAX_LEN-1);
     s.name[NAME_MAX_LEN-1]=0;
     strncpy(s.programme,prog,PROG_MAX_LEN-1);
     s.programme[PROG_MAX_LEN-1]=0;
-    s.mark=mark;
+    s.mark = mark;
 
     g_students[g_count++] = s;
+    push_undo('I', s, s);
+
     printf("CMS: Record inserted.\n");
+    printf("Remember to type SAVE to save your changes.\n");
 }
 
 /* ---------- QUERY ---------- */
@@ -434,47 +655,209 @@ void cmd_query(const char *args){
 }
 
 /* ---------- UPDATE ---------- */
-float prompt_edit_float(const char *label,float cur){
-    char buf[64];
-    printf("%s (current %.1f) -> ",label,cur);
-    if(!fgets(buf,sizeof(buf),stdin)) return cur;
-    rstrip(buf); trim(buf);
-    if(buf[0]=='\0') return cur;
-    char *e; float v=strtof(buf,&e);
-    if(*e=='\0') return v;
-    printf("Invalid. Keeping old.\n");
-    return cur;
-}
-void prompt_edit_string(const char *label,const char*cur,char*out,size_t outsz){
-    printf("%s (current: %s) -> ",label,cur);
-    if(!fgets(out,outsz,stdin)){ out[0]=0; return; }
-    rstrip(out); trim(out);
+/* ---------- YES/NO VALIDATOR ---------- */
+int prompt_yes_no(const char *msg) {
+    char buf[16];
+    while (1) {
+        printf("%s (Y/N): ", msg);
+        if (!fgets(buf, sizeof(buf), stdin)) continue;
+        rstrip(buf);
+        trim(buf);
+
+        if (toupper(buf[0]) == 'Y') return 1;
+        if (toupper(buf[0]) == 'N') return 0;
+
+        printf("Invalid choice. Please enter Y or N.\n");
+    }
 }
 
+/* ---------- UPDATE (fully rewritten) ---------- */
 void cmd_update(const char *args){
     int id = prompt_int("Enter student ID to update: ");
     int idx = find_index_by_id(id);
 
-    if(idx<0){
+    if (idx < 0) {
         printf("CMS: No record found.\n");
         return;
     }
 
-    Student *s=&g_students[idx];
+    Student *s = &g_students[idx];
 
-    char newName[NAME_MAX_LEN]="";
-    char newProg[PROG_MAX_LEN]="";
+    /* ----- Show record BEFORE update ----- */
+    printf("\nRecord found:\n");
+    printf("ID      : %d\n", s->id);
+    printf("Name    : %s\n", s->name);
+    printf("Programme: %s\n", s->programme);
+    printf("Mark    : %.1f\n\n", s->mark);
 
-    prompt_edit_string("Enter new Name", s->name, newName, sizeof(newName));
-    if(newName[0]) strncpy(s->name,newName,sizeof(s->name)-1);
+    Student old = *s;     // backup for undo
+    Student updated = *s; // temp copy for editing
 
-    prompt_edit_string("Enter new Programme", s->programme, newProg, sizeof(newProg));
-    if(newProg[0]) strncpy(s->programme,newProg,sizeof(s->programme)-1);
+    int changed = 0;
 
-    s->mark = prompt_edit_float("Enter new Mark", s->mark);
+    /* ===========================
+       UPDATE STUDENT ID
+       =========================== */
+    if (prompt_yes_no("Do you want to update the student ID?")) {
 
-    printf("CMS: Record updated.\n");
+        int newID;
+
+        while (1) {
+            newID = prompt_student_id();  // validated student ID format
+
+            // ensure this ID isn't used by other students
+            int exist = find_index_by_id(newID);
+            if (exist >= 0 && exist != idx) {
+                printf("Error: This ID already exists.\n");
+                continue;
+            }
+            break;
+        }
+
+        if (newID != updated.id) {
+            updated.id = newID;
+            changed = 1;
+        } else {
+            printf("No change detected for ID.\n");
+        }
+    }
+
+    /* ===========================
+       UPDATE NAME
+       =========================== */
+    if (prompt_yes_no("Do you want to update the Name?")) {
+
+        char temp[NAME_MAX_LEN];
+
+        while (1) {
+            printf("Enter new Name (current: %s): ", updated.name);
+            if (!fgets(temp, sizeof(temp), stdin)) continue;
+            rstrip(temp);
+            trim(temp);
+
+            if (temp[0] == '\0') {
+                printf("Name cannot be empty.\n");
+                continue;
+            }
+
+            if (!is_alpha_space(temp)) {
+                printf("Error: Name must only contain letters and spaces.\n");
+                continue;
+            }
+
+            break;
+        }
+
+        if (strcmp(temp, updated.name) != 0) {
+            strncpy(updated.name, temp, NAME_MAX_LEN - 1);
+            updated.name[NAME_MAX_LEN - 1] = '\0';
+            changed = 1;
+        } else {
+            printf("No change detected for Name.\n");
+        }
+    }
+
+    /* ===========================
+       UPDATE PROGRAMME
+       =========================== */
+    if (prompt_yes_no("Do you want to update the Programme?")) {
+
+        char temp[PROG_MAX_LEN];
+
+        while (1) {
+            printf("Enter new Programme (current: %s): ", updated.programme);
+            if (!fgets(temp, sizeof(temp), stdin)) continue;
+            rstrip(temp);
+            trim(temp);
+
+            if (temp[0] == '\0') {
+                printf("Programme cannot be empty.\n");
+                continue;
+            }
+
+            if (!is_alpha_space(temp)) {
+                printf("Error: Programme must only contain letters and spaces.\n");
+                continue;
+            }
+
+            break;
+        }
+
+        if (strcmp(temp, updated.programme) != 0) {
+            strncpy(updated.programme, temp, PROG_MAX_LEN - 1);
+            updated.programme[PROG_MAX_LEN - 1] = '\0';
+            changed = 1;
+        } else {
+            printf("No change detected for Programme.\n");
+        }
+    }
+
+    /* ===========================
+       UPDATE MARK
+       =========================== */
+    if (prompt_yes_no("Do you want to update the Mark?")) {
+
+        while (1) {
+            char buf[64];
+            printf("Enter new Mark (current: %.1f): ", updated.mark);
+
+            if (!fgets(buf, sizeof(buf), stdin)) continue;
+            rstrip(buf);
+            trim(buf);
+
+            if (buf[0] == '\0') {
+                printf("Mark cannot be empty.\n");
+                continue;
+            }
+
+            char *end;
+            float v = strtof(buf, &end);
+
+            if (*end != '\0' || v < 0 || v > 100) {
+                printf("Invalid mark. Must be 0–100.\n");
+                continue;
+            }
+
+            v = roundf(v * 10.0f) / 10.0f; // 1dp rounding
+
+            if (v != updated.mark) {
+                updated.mark = v;
+                changed = 1;
+            } else {
+                printf("No change detected for Mark.\n");
+            }
+            break;
+        }
+    }
+
+    /* ===========================
+       NO CHANGES?
+       =========================== */
+    if (!changed) {
+        printf("\nCMS: No changes made. Update cancelled.\n");
+        return;
+    }
+
+    /* ===========================
+       APPLY UPDATE + UNDO
+       =========================== */
+    *s = updated; // commit changes
+
+    push_undo('U', old, *s);
+
+    printf("\nCMS: Record updated successfully.\n");
+    printf("Remember to type SAVE to save your changes.\n");
+
+    /* ===========================
+       SHOW UPDATED RECORD
+       =========================== */
+    printf("Updated Record:\n");
+    printf("ID       : %d\n", s->id);
+    printf("Name     : %s\n", s->name);
+    printf("Programme: %s\n", s->programme);
+    printf("Mark     : %.1f\n", s->mark);
 }
+
 
 /* ---------- DELETE ---------- */
 void cmd_delete(const char *args){
@@ -501,11 +884,15 @@ void cmd_delete(const char *args){
         return;
     }
 
+    Student removed = g_students[idx];
+    push_undo('D', removed, removed);   // UNDO for DELETE
+
     for(int i=idx;i<g_count-1;i++)
         g_students[i]=g_students[i+1];
     g_count--;
 
     printf("CMS: Record deleted.\n");
+    printf("Remember to type SAVE to save your changes.\n");
 }
 
 /* ---------- SAVE ---------- */
@@ -520,6 +907,122 @@ void cmd_save(void){
         printf("CMS: Save failed.\n");
 }
 
+/* ---------- UNDO ---------- */
+void cmd_undo(void) {
+    if (g_undo_count == 0) {
+        printf("CMS: No actions to undo.\n");
+        return;
+    }
+
+    UndoEntry last = g_undo[g_undo_count - 1];
+    g_undo_count--;
+
+    // Display the most recent amendment in a clear, professional format
+    printf("\n--------------------------------------------------\n");
+    printf("   MOST RECENT AMENDMENT DETAILS\n");
+    printf("--------------------------------------------------\n");
+
+    if (last.op == 'I') {
+        // INSERT operation
+        printf("Operation:  Insert\n");
+        printf("Student ID: %d\n", last.after.id);
+        printf("Name:       %s\n", last.after.name);
+        printf("Programme:  %s\n", last.after.programme);
+        printf("Mark:       %.1f\n", last.after.mark);
+    } else if (last.op == 'U') {
+        // UPDATE operation
+        printf("Operation:  Update\n");
+        printf("Student ID: %d\n", last.before.id);
+        printf("Name:       %s -> %s\n", last.before.name, last.after.name);
+        printf("Programme:  %s -> %s\n", last.before.programme, last.after.programme);
+        printf("Mark:       %.1f -> %.1f\n", last.before.mark, last.after.mark);
+    } else if (last.op == 'D') {
+        // DELETE operation
+        printf("Operation:  Delete\n");
+        printf("Student ID: %d\n", last.before.id);
+        printf("Name:       %s\n", last.before.name);
+        printf("Programme:  %s\n", last.before.programme);
+        printf("Mark:       %.1f\n", last.before.mark);
+    }
+
+    printf("--------------------------------------------------\n");
+
+    // Ask for confirmation
+    if (prompt_yes_no("Do you want to undo this action?")) {
+        if (last.op == 'I') {
+            // Undo INSERT → remove inserted student
+            int idx = find_index_by_id(last.after.id);
+            if (idx >= 0) {
+                for (int i = idx; i < g_count - 1; i++)
+                    g_students[i] = g_students[i + 1];
+                g_count--;
+            }
+            printf("CMS: Undo successful (INSERT undone).\n");
+        } else if (last.op == 'D') {
+            // Undo DELETE → restore deleted student
+            if (g_count < MAX_STUDENTS) {
+                g_students[g_count++] = last.before;
+                printf("CMS: Undo successful (DELETE undone).\n");
+            } else {
+                printf("CMS: Undo failed (storage full).\n");
+            }
+        } else if (last.op == 'U') {
+            // Undo UPDATE → revert back to old state
+            int idx = find_index_by_id(last.after.id);
+            if (idx >= 0) {
+                g_students[idx] = last.before;
+                printf("CMS: Undo successful (UPDATE undone).\n");
+            } else {
+                printf("CMS: Undo failed (record not found).\n");
+            }
+        }
+        printf("Remember to type SAVE to save your changes.\n");
+    } else {
+        printf("Undo cancelled.\n");
+    }
+}
+
+void cmd_show_summary(void) {
+    if (g_count == 0) {
+        printf("CMS: No records loaded.\n");
+        return;
+    }
+
+    int count = g_count;
+
+    float sum = 0.0f;
+    int idx_max = 0;   // index of the highest mark
+    int idx_min = 0;   // index of the lowest mark
+
+    // loop through all records to find sum, min, max
+    for (int i = 0; i < count; i++) {
+        float mark = g_students[i].mark;
+        sum += mark;
+
+        if (mark > g_students[idx_max].mark) {
+            idx_max = i;
+        }
+        if (mark < g_students[idx_min].mark) {
+            idx_min = i;
+        }
+    }
+
+    float average = sum / count;
+
+    Student *s_max = &g_students[idx_max];
+    Student *s_min = &g_students[idx_min];
+
+    printf("CMS SUMMARY\n");
+    printf("-----------\n");
+    printf("Total number of students : %d\n", count);
+    printf("Average mark             : %.2f\n", average);
+    printf("Highest mark             : %.1f (Student ID: %d, Name: %s)\n",
+           s_max->mark, s_max->id, s_max->name);
+    printf("Lowest mark              : %.1f (Student ID: %d, Name: %s)\n",
+           s_min->mark, s_min->id, s_min->name);
+}
+
+/* ---------- PRINT DECLARATION ---------- */
 void print_declaration(void){
     FILE *fp=fopen("declaration.txt","r");
     if(!fp){
@@ -534,51 +1037,112 @@ void print_declaration(void){
 }
 
 /* ---------- MAIN ---------- */
-int main(void){
+int main(void) {
+    // Call the login function
+    if (!login()) return 0;  // If login fails, exit the program
+
     print_declaration();
-    show_help();
+
+    // Show help based on login type (admin or student)
+    if (g_is_admin) {
+        show_help();           // admin gets full help
+    } else {
+        show_help_student();   // student gets restricted help
+    }
 
     char line[LINE_MAX_LEN];
 
-    while(1){
+    while (1) {
         printf("> ");
-        if(!fgets(line,sizeof(line),stdin)) break;
+        if (!fgets(line, sizeof(line), stdin)) break;
         rstrip(line);
-        if(line[0]=='\0') continue;
+        if (line[0] == '\0') continue;
 
         char cmd[64];
-        int i=0;
-        const char *p=line;
+        int i = 0;
+        const char *p = line;
 
-        while(*p && isspace((unsigned char)*p)) p++;
-        while(*p && !isspace((unsigned char)*p) && i<63)
-            cmd[i++]=*p++;
-        cmd[i]=0;
-        while(*p && isspace((unsigned char)*p)) p++;
+        while (*p && isspace((unsigned char)*p)) p++;
+        while (*p && !isspace((unsigned char)*p) && i < 63)
+            cmd[i++] = *p++;
+        cmd[i] = 0;
+        while (*p && isspace((unsigned char)*p)) p++;
 
-        if(equals_ic(cmd,"EXIT")) break;
-        else if(equals_ic(cmd,"HELP")) show_help();
-        else if(equals_ic(cmd,"OPEN")) cmd_open(p);
-        else if(equals_ic(cmd,"SHOW")) {
-            char first[16];
-            int fi=0;
-            const char *q=p;
-
-            while(*q && !isspace((unsigned char)*q) && fi<15)
-                first[fi++]=*q++;
-            first[fi]=0;
-            while(*q && isspace((unsigned char)*q)) q++;
-
-            if(equals_ic(first,"ALL")) cmd_show_all(q);
-            else printf("CMS: Use SHOW ALL.\n");
+        // Command processing
+        if (equals_ic(cmd, "EXIT")) break;
+        else if (equals_ic(cmd, "HELP")) {
+            if (g_is_admin)
+                show_help();           // admin gets full help
+            else
+                show_help_student();   // student gets restricted help
         }
-        else if(equals_ic(cmd,"INSERT")) cmd_insert(p);
-        else if(equals_ic(cmd,"QUERY"))  cmd_query(p);
-        else if(equals_ic(cmd,"UPDATE")) cmd_update(p);
-        else if(equals_ic(cmd,"DELETE")) cmd_delete(p);
-        else if(equals_ic(cmd,"SAVE"))   cmd_save();
-        else printf("CMS: Unknown command.\n");
+        else if (equals_ic(cmd, "OPEN")) cmd_open(p);
+        else if (equals_ic(cmd, "SHOW")) {
+            if (*p == '\0') {
+                printf("CMS: Use SHOW ALL or SHOW SUMMARY.\n");
+            } else {
+                // Handle SHOW commands
+                char first[16];
+                int fi = 0;
+                const char *q = p;
+
+                while (*q && !isspace((unsigned char)*q) && fi < (int)sizeof(first) - 1) {
+                    first[fi++] = *q++;
+                }
+                first[fi] = '\0';
+                while (*q && isspace((unsigned char)*q)) q++;
+
+                if (equals_ic(first, "ALL")) {
+                    cmd_show_all(q);
+                } else if (equals_ic(first, "SUMMARY")) {
+                    cmd_show_summary();
+                } else {
+                    printf("CMS: Use SHOW ALL or SHOW SUMMARY.\n");
+                }
+            }
+        }
+        else if (equals_ic(cmd, "INSERT")) {
+            if (g_is_admin) {
+                cmd_insert(p); // Only admins can insert records
+            } else {
+                printf("You do not have permission to insert records.\n"); // Students cannot insert
+            }
+        }
+        else if (equals_ic(cmd, "DELETE")) {
+            if (g_is_admin) {
+                cmd_delete(p); // Only admins can delete records
+            } else {
+                printf("You do not have permission to delete records.\n"); // Students cannot delete
+            }
+        }
+        else if (equals_ic(cmd, "UNDO")) {
+            if (g_is_admin) {
+                cmd_undo(); // Only admins can undo actions
+            } else {
+                printf("You do not have permission to undo actions.\n"); // Students cannot undo
+            }
+        }
+        else if (equals_ic(cmd, "SAVE")) {
+            if (g_is_admin) {
+                cmd_save(); // Only admins can save changes
+            } else {
+                printf("You do not have permission to save changes.\n"); // Students cannot save
+            }
+        }
+        else if (equals_ic(cmd, "QUERY")) {
+            cmd_query(p);
+        }
+        else if (equals_ic(cmd, "UPDATE")) {
+            if (g_is_admin) {
+                cmd_update(p);  // Only admins can update records
+            } else {
+                printf("You do not have permission to update records.\n");  // Students cannot update
+            }
+        }
+        else {
+            printf("CMS: Unknown command or insufficient permissions.\n");
+        }
     }
 
     return 0;
-}
+} 
