@@ -17,9 +17,12 @@
 //  UNDO — This feature keeps an internal stack of the most recent modifying actions 
 //          (INSERT, UPDATE, DELETE) and allows the user to revert the most recent change.
 //          Demonstrates use of structs, arrays, state management, and integration with CMS logic.
-
-
-
+//  LOGIN — This feature allows users to securely authenticate as either an admin or a student 
+//          by providing a valid username and password. Admin users can access all CMS features 
+//          (INSERT, DELETE, UPDATE, SAVE), while students have restricted access (can only view records).
+//          The login process is protected by a limit of 5 attempts, after which the system locks further login attempts.
+//          Demonstrates use of input validation, role-based access control, security measures in user authentication,
+//          and a mechanism to prevent brute force attacks through the attempt limitation.
 
 
 #define _CRT_SECURE_NO_WARNINGS
