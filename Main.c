@@ -32,8 +32,9 @@
 #include <stdlib.h>
 #include <math.h>   // for roundf()
 #define ADMIN_USERNAME "admin"
-#define ADMIN_PASSWORD "AdminDb@2025!"  // Unique admin password
+#define ADMIN_PASSWORD "admin"  // admin password
 #define STUDENT_USERNAME "student"
+#define STUDENT_PASSWORD "student"  // student password
 
 /* ---------- Simple configuration ---------- */
 #define MAX_STUDENTS 1000
@@ -124,24 +125,17 @@ int login() {
 
         // Student login
         else if (equals_ic(username, STUDENT_USERNAME)) {
-            printf("Enter student ID as password: ");
+            printf("Enter password: ");
             fgets(password, sizeof(password), stdin);
             rstrip(password);
 
-            // Check if the password matches the student ID format (starts with '2' and has 7 digits)
-            if (strlen(password) == 7 && password[0] == '2' && 
-                isdigit((unsigned char)password[1]) && 
-                isdigit((unsigned char)password[2]) &&
-                isdigit((unsigned char)password[3]) &&
-                isdigit((unsigned char)password[4]) &&
-                isdigit((unsigned char)password[5]) &&
-                isdigit((unsigned char)password[6])) {
+            if (equals_ic(password, STUDENT_PASSWORD)) {
                 g_is_admin = 0;  // Student login
                 return 1;
             } else {
-                printf("Invalid student ID. Try again.\n");
+                printf("Invalid student password. Try again.\n");
             }
-        }
+        }      
 
         // If password is invalid, decrease the attempts
         printf("You have %d attempt(s) left.\n", attempts - 1);
@@ -413,6 +407,20 @@ void show_help(void){
     printf("  HELP / EXIT                  -> help or quit the program\n\n");
 }
 
+void show_help_student(void){
+    printf("\nAvailable Commands (Student Access Only):\n");
+    printf("  OPEN <filename>              -> open the database file and read in all records\n");
+    printf("\n");
+    printf("  SHOW ALL                     -> display all current records in memory\n");
+    printf("  SHOW ALL SORT BY ID ASC      -> sort by student ID (ascending)\n");
+    printf("  SHOW ALL SORT BY ID DESC     -> sort by student ID (descending)\n");
+    printf("  SHOW ALL SORT BY MARK ASC    -> sort by mark (ascending)\n");
+    printf("  SHOW ALL SORT BY MARK DESC   -> sort by mark (descending)\n");
+    printf("\n");
+    printf("  QUERY ID=<n>                 -> search for a specific student record\n");
+    printf("  SHOW SUMMARY                 -> show total, average, highest & lowest marks\n");
+    printf("  HELP / EXIT                  -> display help or exit the program\n\n");
+}
 
 /* ---------- OPEN ---------- */
 void cmd_open(const char *args){
@@ -905,54 +913,79 @@ void cmd_save(void){
 /* ---------- UNDO ---------- */
 void cmd_undo(void) {
     if (g_undo_count == 0) {
-        printf("CMS: Nothing to undo.\n");
+        printf("CMS: No actions to undo.\n");
         return;
     }
 
     UndoEntry last = g_undo[g_undo_count - 1];
     g_undo_count--;
 
+    // Display the most recent amendment in a clear, professional format
+    printf("\n--------------------------------------------------\n");
+    printf("   MOST RECENT AMENDMENT DETAILS\n");
+    printf("--------------------------------------------------\n");
+
     if (last.op == 'I') {
-        // Undo INSERT → remove inserted student
-        int idx = find_index_by_id(last.after.id);
-        if (idx >= 0) {
-            for (int i = idx; i < g_count - 1; i++)
-                g_students[i] = g_students[i + 1];
-            g_count--;
+        // INSERT operation
+        printf("Operation:  Insert\n");
+        printf("Student ID: %d\n", last.after.id);
+        printf("Name:       %s\n", last.after.name);
+        printf("Programme:  %s\n", last.after.programme);
+        printf("Mark:       %.1f\n", last.after.mark);
+    } else if (last.op == 'U') {
+        // UPDATE operation
+        printf("Operation:  Update\n");
+        printf("Student ID: %d\n", last.before.id);
+        printf("Name:       %s -> %s\n", last.before.name, last.after.name);
+        printf("Programme:  %s -> %s\n", last.before.programme, last.after.programme);
+        printf("Mark:       %.1f -> %.1f\n", last.before.mark, last.after.mark);
+    } else if (last.op == 'D') {
+        // DELETE operation
+        printf("Operation:  Delete\n");
+        printf("Student ID: %d\n", last.before.id);
+        printf("Name:       %s\n", last.before.name);
+        printf("Programme:  %s\n", last.before.programme);
+        printf("Mark:       %.1f\n", last.before.mark);
+    }
+
+    printf("--------------------------------------------------\n");
+
+    // Ask for confirmation
+    if (prompt_yes_no("Do you want to undo this action?")) {
+        if (last.op == 'I') {
+            // Undo INSERT → remove inserted student
+            int idx = find_index_by_id(last.after.id);
+            if (idx >= 0) {
+                for (int i = idx; i < g_count - 1; i++)
+                    g_students[i] = g_students[i + 1];
+                g_count--;
+            }
+            printf("CMS: Undo successful (INSERT undone).\n");
+        } else if (last.op == 'D') {
+            // Undo DELETE → restore deleted student
+            if (g_count < MAX_STUDENTS) {
+                g_students[g_count++] = last.before;
+                printf("CMS: Undo successful (DELETE undone).\n");
+            } else {
+                printf("CMS: Undo failed (storage full).\n");
+            }
+        } else if (last.op == 'U') {
+            // Undo UPDATE → revert back to old state
+            int idx = find_index_by_id(last.after.id);
+            if (idx >= 0) {
+                g_students[idx] = last.before;
+                printf("CMS: Undo successful (UPDATE undone).\n");
+            } else {
+                printf("CMS: Undo failed (record not found).\n");
+            }
         }
-        printf("CMS: Undo successful (INSERT undone).\n");
         printf("Remember to type SAVE to save your changes.\n");
-    }
-
-    else if (last.op == 'D') {
-        // Undo DELETE → restore deleted student
-        if (g_count < MAX_STUDENTS) {
-            g_students[g_count++] = last.before;
-            printf("CMS: Undo successful (DELETE undone).\n");
-            printf("Remember to type SAVE to save your changes.\n");
-        } else {
-            printf("CMS: Undo failed (storage full).\n");
-        }
-    }
-
-    else if (last.op == 'U') {
-        // Undo UPDATE → revert back to old state
-        int idx = find_index_by_id(last.after.id);
-        if (idx >= 0) {
-            g_students[idx] = last.before;
-            printf("CMS: Undo successful (UPDATE undone).\n");
-            printf("Remember to type SAVE to save your changes.\n");
-        } else {
-            printf("CMS: Undo failed (record not found).\n");
-        }
-    }
-
-    else {
-        printf("CMS: Undo failed (unknown operation).\n");
+    } else {
+        printf("Undo cancelled.\n");
     }
 }
 
-static void cmd_show_summary(void) {
+void cmd_show_summary(void) {
     if (g_count == 0) {
         printf("CMS: No records loaded.\n");
         return;
@@ -1012,7 +1045,13 @@ int main(void) {
     if (!login()) return 0;  // If login fails, exit the program
 
     print_declaration();
-    show_help();
+
+    // Show help based on login type (admin or student)
+    if (g_is_admin) {
+        show_help();           // admin gets full help
+    } else {
+        show_help_student();   // student gets restricted help
+    }
 
     char line[LINE_MAX_LEN];
 
@@ -1034,7 +1073,12 @@ int main(void) {
 
         // Command processing
         if (equals_ic(cmd, "EXIT")) break;
-        else if (equals_ic(cmd, "HELP")) show_help();
+        else if (equals_ic(cmd, "HELP")) {
+            if (g_is_admin)
+                show_help();           // admin gets full help
+            else
+                show_help_student();   // student gets restricted help
+        }
         else if (equals_ic(cmd, "OPEN")) cmd_open(p);
         else if (equals_ic(cmd, "SHOW")) {
             if (*p == '\0') {
@@ -1104,5 +1148,4 @@ int main(void) {
     }
 
     return 0;
-}
-
+} 
