@@ -35,6 +35,7 @@
 #define ADMIN_PASSWORD "admin"  // admin password
 #define STUDENT_USERNAME "student"
 #define STUDENT_PASSWORD "student"  // student password
+#define DEFAULT_STUDENT_DB "P10_6-cms.txt"
 
 /* ---------- Simple configuration ---------- */
 #define MAX_STUDENTS 1000
@@ -388,38 +389,46 @@ int save_to_file(const char *filename){
 
 /* ===================== COMMANDS ===================== */
 void show_help(void){
+    printf("\n--------------------------------------------------------------------------------");
     printf("\nAvailable Commands:\n");
+    printf("\n                 ---File Operations---                           \n");
     printf("  OPEN <filename>              -> open the database file and read in all records\n");
-    printf("\n");
+    printf("\n                 ---Display Operations---                    \n");
     printf("  SHOW ALL                     -> display all current records in memory\n");
     printf("  SHOW ALL SORT BY ID ASC      -> sort by student ID (ascending)\n");
     printf("  SHOW ALL SORT BY ID DESC     -> sort by student ID (descending)\n");
     printf("  SHOW ALL SORT BY MARK ASC    -> sort by mark (ascending)\n");
     printf("  SHOW ALL SORT BY MARK DESC   -> sort by mark (descending)\n");
-    printf("\n");
+    printf("  SHOW SUMMARY                 -> show total, average mark, highest & lowest\n");
+    printf("\n                 ---Record Operations---                    \n");
     printf("  INSERT                       -> insert a new record (prompts every column)\n");
     printf("  QUERY ID=<n>                 -> search for a record with a given student ID\n");
     printf("  UPDATE ID=<n>                -> update the data (prompts every column; Enter keeps)\n");
     printf("  DELETE ID=<n>                -> delete the record (double confirm)\n");
     printf("  SAVE                         -> save all current records into the database file\n");
-    printf("  UNDO                         -> undo the last INSERT, UPDATE, or DELETE\n");
-    printf("  SHOW SUMMARY                 -> show total, average mark, highest & lowest\n");
-    printf("  HELP / EXIT                  -> help or quit the program\n\n");
+    printf("  UNDO                         -> undo the last INSERT, UPDATE, or DELETE\n");   
+    printf("\n                      ---General---                           \n");
+    printf("  HELP                         -> show this help menu\n");
+    printf("  EXIT                         -> quit the program\n");
+    printf("--------------------------------------------------------------------------------\n");
 }
 
 void show_help_student(void){
-    printf("\nAvailable Commands (Student Access Only):\n");
-    printf("  OPEN <filename>              -> open the database file and read in all records\n");
-    printf("\n");
+    printf("\n--------------------------------------------------------------------------------");
+    printf("\nAvailable Commands (Student Access Only):\n");   
+    printf("\n                 ---Display Operations---                    \n");
     printf("  SHOW ALL                     -> display all current records in memory\n");
     printf("  SHOW ALL SORT BY ID ASC      -> sort by student ID (ascending)\n");
     printf("  SHOW ALL SORT BY ID DESC     -> sort by student ID (descending)\n");
     printf("  SHOW ALL SORT BY MARK ASC    -> sort by mark (ascending)\n");
     printf("  SHOW ALL SORT BY MARK DESC   -> sort by mark (descending)\n");
-    printf("\n");
-    printf("  QUERY ID=<n>                 -> search for a specific student record\n");
     printf("  SHOW SUMMARY                 -> show total, average, highest & lowest marks\n");
-    printf("  HELP / EXIT                  -> display help or exit the program\n\n");
+    printf("\n                     ---Search---                           \n");
+    printf("  QUERY ID=<n>                 -> search for a specific student record\n");   
+    printf("\n                     ---General---                           \n");
+    printf("  HELP                         -> show this help menu\n");
+    printf("  EXIT                         -> quit the program\n");
+    printf("--------------------------------------------------------------------------------\n");
 }
 
 /* ---------- OPEN ---------- */
@@ -1046,6 +1055,17 @@ int main(void) {
 
     print_declaration();
 
+    // Auto-open for student
+    if (!g_is_admin) {
+        if (!load_from_file(DEFAULT_STUDENT_DB)) {
+            printf("CMS: Auto-load failed. Creating new DB on SAVE.\n");
+        } else {
+            printf("CMS: P10_6-CMS loaded successfully (%d records).\n", g_count);
+        }
+        strncpy(g_open_filename, DEFAULT_STUDENT_DB, sizeof(g_open_filename)-1);
+        g_open_filename[sizeof(g_open_filename)-1] = '\0';
+    }
+
     // Show help based on login type (admin or student)
     if (g_is_admin) {
         show_help();           // admin gets full help
@@ -1079,7 +1099,13 @@ int main(void) {
             else
                 show_help_student();   // student gets restricted help
         }
-        else if (equals_ic(cmd, "OPEN")) cmd_open(p);
+        else if (equals_ic(cmd, "OPEN")) {
+            if (g_is_admin) {
+                cmd_open(p);
+            } else {
+                printf("Students cannot open database files (auto-loaded at login).\n");
+            }
+        }
         else if (equals_ic(cmd, "SHOW")) {
             if (*p == '\0') {
                 printf("CMS: Use SHOW ALL or SHOW SUMMARY.\n");

@@ -13,4 +13,3 @@ ID	Name	Programme	Mark
 2501954	Tiffany Tan	Computer Science	50.8
 2201354	Sky Teo	Nursing	76.4
 2309999	Ahmad Ali	Software Engineering	51.4
-2501888	BANANA Account		89.9
