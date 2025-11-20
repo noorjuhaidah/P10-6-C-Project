@@ -502,6 +502,30 @@ int is_alpha_space(const char *s){
     return 1;
 }
 
+// Ask for a valid Name (letters + spaces only)
+void prompt_name(char *out, size_t outsz) {
+    while (1) {
+        prompt_string("Enter Name: ", out, outsz);
+        if (!is_alpha_space(out)) {
+            printf("Error: Name must only contain letters and spaces.\n");
+            continue;
+        }
+        break;
+    }
+}
+
+// Ask for a valid Programme (letters + spaces only)
+void prompt_programme(char *out, size_t outsz) {
+    while (1) {
+        prompt_string("Enter Programme: ", out, outsz);
+        if (!is_alpha_space(out)) {
+            printf("Error: Programme must only contain letters and spaces.\n");
+            continue;
+        }
+        break;
+    }
+}
+
 // NEW: validate student ID (must start with 2 + 7 digits)
 int prompt_student_id(void){
     char buf[64];
@@ -536,54 +560,51 @@ int prompt_student_id(void){
 }
 
 // NEW: validate and round mark to 1 decimal place
-float prompt_mark(const char *label){
+float prompt_mark(const char *label) {
     char buf[64];
-
-    while(1){
+    while (1) {
         printf("%s", label);
-        if(!fgets(buf,sizeof(buf),stdin)) return 0;
+        if (!fgets(buf, sizeof(buf), stdin)) continue;
         rstrip(buf);
         trim(buf);
 
-        char *e;
-        float v = strtof(buf,&e);
-
-        if(*e=='\0'){
-            v = roundf(v * 10.0f) / 10.0f; // round to 1dp
-            return v;
+        // Check empty
+        if (buf[0] == '\0') {
+            printf("Mark cannot be empty.\n");
+            continue;
         }
 
-        printf("Invalid number.\n");
-    }
-}
+        // Convert
+        char *end;
+        float v = strtof(buf, &end);
 
-// NEW: validated name input (letters + spaces)
-void prompt_name(char *out, size_t outsz){
-    while(1){
-        prompt_string("Enter Name: ", out, outsz);
-
-        if(is_alpha_space(out)){
-            return;
+        // Reject invalid text
+        if (*end != '\0') {
+            printf("Invalid number.\n");
+            continue;
         }
-        printf("Error: Name must contain only letters and spaces.\n");
-    }
-}
 
-// NEW: validated programme input (letters + spaces)
-void prompt_programme(char *out, size_t outsz){
-    while(1){
-        prompt_string("Enter Programme: ", out, outsz);
-
-        if(is_alpha_space(out)){
-            return;
+        // Range check
+        if (v < 0 || v > 100) {
+            printf("Mark must be between 0 and 100.\n");
+            continue;
         }
-        printf("Error: Programme must contain only letters and spaces.\n");
+
+        // Round to 1 dp
+        v = roundf(v * 10.0f) / 10.0f;
+        return v;
     }
 }
 
 /* ---------- INSERT ---------- */
 void cmd_insert(const char *args){
-    if(g_count >= MAX_STUDENTS){
+    // Do not allow INSERT if no file has been opened yet
+    if (g_open_filename[0] == '\0') {
+        printf("CMS: No file opened.\n");
+        return;
+    }
+
+    if (g_count >= MAX_STUDENTS){
         printf("CMS: Storage full.\n");
         return;
     }
@@ -591,9 +612,9 @@ void cmd_insert(const char *args){
     int id;
 
     // Validate ID + check duplicate
-    while(1){
+    while (1) {
         id = prompt_student_id();
-        if(find_index_by_id(id) >= 0){
+        if (find_index_by_id(id) >= 0) {
             printf("Error: This ID exists.\n");
         } else {
             break;
@@ -604,17 +625,17 @@ void cmd_insert(const char *args){
     char prog[PROG_MAX_LEN];
     float mark;
 
-    // NEW VALIDATED INPUTS
+    // VALIDATED INPUTS
     prompt_name(name, sizeof(name));
     prompt_programme(prog, sizeof(prog));
     mark = prompt_mark("Enter Mark: ");
 
     Student s;
     s.id = id;
-    strncpy(s.name,name,NAME_MAX_LEN-1);
-    s.name[NAME_MAX_LEN-1]=0;
-    strncpy(s.programme,prog,PROG_MAX_LEN-1);
-    s.programme[PROG_MAX_LEN-1]=0;
+    strncpy(s.name, name, NAME_MAX_LEN - 1);
+    s.name[NAME_MAX_LEN - 1] = '\0';
+    strncpy(s.programme, prog, PROG_MAX_LEN - 1);
+    s.programme[PROG_MAX_LEN - 1] = '\0';
     s.mark = mark;
 
     g_students[g_count++] = s;
@@ -626,6 +647,12 @@ void cmd_insert(const char *args){
 
 /* ---------- QUERY ---------- */
 void cmd_query(const char *args){
+    // block if no file open
+    if (g_open_filename[0] == '\0') {
+        printf("CMS: No file opened.\n");
+        return;
+    }
+
     int id = prompt_int("Enter student ID to search: ");
     int idx = find_index_by_id(id);
 
@@ -659,6 +686,12 @@ int prompt_yes_no(const char *msg) {
 
 /* ---------- UPDATE (fully rewritten) ---------- */
 void cmd_update(const char *args){
+    // block if no file open
+    if (g_open_filename[0] == '\0') {
+        printf("CMS: No file opened.\n");
+        return;
+    }
+
     int id = prompt_int("Enter student ID to update: ");
     int idx = find_index_by_id(id);
 
@@ -800,7 +833,7 @@ void cmd_update(const char *args){
             float v = strtof(buf, &end);
 
             if (*end != '\0' || v < 0 || v > 100) {
-                printf("Invalid mark. Must be 0–100.\n");
+                printf("Invalid mark. Must be 0-100.\n");
                 continue;
             }
 
@@ -847,6 +880,12 @@ void cmd_update(const char *args){
 
 /* ---------- DELETE ---------- */
 void cmd_delete(const char *args){
+    // block if no file open
+    if (g_open_filename[0] == '\0') {
+        printf("CMS: No file opened.\n");
+        return;
+    }
+
     int id = prompt_int("Enter student ID to delete: ");
     int idx = find_index_by_id(id);
 
