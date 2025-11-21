@@ -1130,34 +1130,65 @@ void cmd_show_summary(void) {
     float sum = 0.0f;
     int idx_max = 0;   // index of the highest mark
     int idx_min = 0;   // index of the lowest mark
+    float max_mark = g_students[0].mark;
+    float min_mark = g_students[0].mark;
+
+    // Arrays to store students with the same highest or lowest mark
+    int max_students[g_count];
+    int min_students[g_count];
+    int max_count = 0, min_count = 0;
 
     // loop through all records to find sum, min, max
     for (int i = 0; i < count; i++) {
         float mark = g_students[i].mark;
         sum += mark;
 
-        if (mark > g_students[idx_max].mark) {
-            idx_max = i;
+        // Check for highest mark
+        if (mark > max_mark) {
+            max_mark = mark;
+            max_count = 0;  // reset the counter for students with max mark
+            max_students[max_count++] = i;
+        } else if (mark == max_mark) {
+            // If another student has the same highest mark, add them to the array
+            max_students[max_count++] = i;
         }
-        if (mark < g_students[idx_min].mark) {
-            idx_min = i;
+
+        // Check for lowest mark
+        if (mark < min_mark) {
+            min_mark = mark;
+            min_count = 0;  // reset the counter for students with min mark
+            min_students[min_count++] = i;
+        } else if (mark == min_mark) {
+            // If another student has the same lowest mark, add them to the array
+            min_students[min_count++] = i;
         }
     }
 
     float average = sum / count;
 
-    Student *s_max = &g_students[idx_max];
-    Student *s_min = &g_students[idx_min];
-
+    // Display the highest and lowest marks along with student names
     printf("CMS SUMMARY\n");
     printf("-----------\n");
     printf("Total number of students : %d\n", count);
     printf("Average mark             : %.2f\n", average);
-    printf("Highest mark             : %.1f (Student ID: %d, Name: %s)\n",
-           s_max->mark, s_max->id, s_max->name);
-    printf("Lowest mark              : %.1f (Student ID: %d, Name: %s)\n",
-           s_min->mark, s_min->id, s_min->name);
+    printf("Highest mark             : %.1f\n", max_mark);
+    printf("Lowest mark              : %.1f\n", min_mark);
+
+    // Show highest mark details
+    printf("Student(s) with highest mark:\n");
+    for (int i = 0; i < max_count; i++) {
+        int idx = max_students[i];
+        printf("  ID: %d, Name: %s, Mark: %.1f\n", g_students[idx].id, g_students[idx].name, g_students[idx].mark);
+    }
+    
+    // Show lowest mark details
+    printf("\nStudent(s) with lowest mark:\n");
+    for (int i = 0; i < min_count; i++) {
+        int idx = min_students[i];
+        printf("  ID: %d, Name: %s, Mark: %.1f\n", g_students[idx].id, g_students[idx].name, g_students[idx].mark);
+    }
 }
+
 
 /* ---------- PRINT DECLARATION ---------- */
 void print_declaration(void){
