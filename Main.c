@@ -42,6 +42,18 @@ char    g_open_filename[260] = "";
 int     g_is_admin = 0; // 0 - student, 1 - admin
 
 /* ---------- Helper functions ---------- */
+int equals_ic(const char *a, const char *b);
+
+
+// Check if the user wants to quit
+int check_exit(const char *input) {
+    if (equals_ic(input, "QUIT")) {
+        return 1;  // User wants to quit
+    }
+    return 0;  // Continue as normal
+}
+
+
 void rstrip(char *s) {
     size_t n = strlen(s);
     while (n && (s[n - 1] == '\n' || s[n - 1] == '\r')) s[--n] = '\0';
@@ -465,25 +477,44 @@ void prompt_string(const char *label,char*out,size_t outsz){
         printf("Please enter something.\n");
     }
 }
-int prompt_int(const char *label){
+int prompt_int(const char *label) {
     char buf[64];
-    while(1){
-        printf("%s",label);
-        if(!fgets(buf,sizeof(buf),stdin)) return 0;
-        rstrip(buf); trim(buf);
-        char *e; long v=strtol(buf,&e,10);
-        if(*e=='\0') return (int)v;
+    while (1) {
+        printf("%s", label);
+        if (!fgets(buf, sizeof(buf), stdin)) return 0;
+        rstrip(buf);
+        trim(buf);
+
+        // Check if user wants to exit
+        if (check_exit(buf)) {
+            printf("Exiting operation.\n");
+            return 0;  // Exit the current operation
+        }
+
+        char *e;
+        long v = strtol(buf, &e, 10);
+        if (*e == '\0') return (int)v;
         printf("Invalid integer.\n");
     }
 }
-float prompt_float(const char *label){
+float prompt_float(const char *label) {
     char buf[64];
-    while(1){
-        printf("%s",label);
-        if(!fgets(buf,sizeof(buf),stdin)) return 0;
-        rstrip(buf); trim(buf);
-        char *e; float v=strtof(buf,&e);
-        if(*e=='\0') return v;
+    while (1) {
+        printf("%s", label);
+        if (!fgets(buf, sizeof(buf), stdin)) continue;
+        rstrip(buf);
+        trim(buf);
+
+        // Check if user wants to exit
+        if (check_exit(buf)) {
+            printf("Exiting operation.\n");
+            return 0;  // Exit the current operation
+        }
+
+        char *e;
+        float v = strtof(buf, &e);
+
+        if (*e == '\0') return v;
         printf("Invalid number.\n");
     }
 }
@@ -597,14 +628,19 @@ float prompt_mark(const char *label) {
 }
 
 /* ---------- INSERT ---------- */
-void cmd_insert(const char *args){
-    // Do not allow INSERT if no file has been opened yet
+void cmd_insert(const char *args) {
+    // Check if user wants to exit
+    if (check_exit(args)) {
+        printf("Exiting insert operation.\n");
+        return;  // Exit the insert operation
+    }
+
     if (g_open_filename[0] == '\0') {
         printf("CMS: No file opened.\n");
         return;
     }
 
-    if (g_count >= MAX_STUDENTS){
+    if (g_count >= MAX_STUDENTS) {
         printf("CMS: Storage full.\n");
         return;
     }
@@ -613,7 +649,19 @@ void cmd_insert(const char *args){
 
     // Validate ID + check duplicate
     while (1) {
-        id = prompt_student_id();
+        printf("Enter student ID: ");
+        char buf[64];
+        if (!fgets(buf, sizeof(buf), stdin)) continue;
+        rstrip(buf);
+        trim(buf);
+
+        // Check if user wants to exit
+        if (check_exit(buf)) {
+            printf("Exiting insert operation.\n");
+            return;  // Exit the insert operation
+        }
+
+        id = atoi(buf);
         if (find_index_by_id(id) >= 0) {
             printf("Error: This ID exists.\n");
         } else {
@@ -626,9 +674,39 @@ void cmd_insert(const char *args){
     float mark;
 
     // VALIDATED INPUTS
-    prompt_name(name, sizeof(name));
-    prompt_programme(prog, sizeof(prog));
-    mark = prompt_mark("Enter Mark: ");
+    while (1) {
+        prompt_string("Enter Name: ", name, sizeof(name));
+
+        // Check if user wants to quit
+        if (check_exit(name)) {
+            printf("Exiting insert operation.\n");
+            return;  // Exit the insert operation
+        }
+
+        if (!is_alpha_space(name)) {
+            printf("Error: Name must only contain letters and spaces.\n");
+            continue;
+        }
+        break;
+    }
+
+    while (1) {
+        prompt_string("Enter Programme: ", prog, sizeof(prog));
+
+        // Check if user wants to quit
+        if (check_exit(prog)) {
+            printf("Exiting insert operation.\n");
+            return;  // Exit the insert operation
+        }
+
+        if (!is_alpha_space(prog)) {
+            printf("Error: Programme must only contain letters and spaces.\n");
+            continue;
+        }
+        break;
+    }
+
+    mark = prompt_mark("Enter Mark: ");  // assuming this is validated already
 
     Student s;
     s.id = id;
@@ -644,6 +722,7 @@ void cmd_insert(const char *args){
     printf("CMS: Record inserted.\n");
     printf("Remember to type SAVE to save your changes.\n");
 }
+
 
 /* ---------- QUERY ---------- */
 void cmd_query(const char *args){
@@ -671,33 +750,53 @@ void cmd_query(const char *args){
 /* ---------- YES/NO VALIDATOR ---------- */
 int prompt_yes_no(const char *msg) {
     char buf[16];
+    
     while (1) {
-        printf("%s (Y/N): ", msg);
-        if (!fgets(buf, sizeof(buf), stdin)) continue;
-        rstrip(buf);
-        trim(buf);
+        printf("%s (Y/N): ", msg);  
+        if (!fgets(buf, sizeof(buf), stdin)) continue;  // Get user input
+        rstrip(buf);  // Remove trailing newline characters
+        trim(buf);    // Remove leading/trailing spaces
 
-        if (toupper(buf[0]) == 'Y') return 1;
-        if (toupper(buf[0]) == 'N') return 0;
-
-        printf("Invalid choice. Please enter Y or N.\n");
+        // Check if the input is valid: "Y", "YES", "N", or "NO"
+        if (equals_ic(buf, "Y") || equals_ic(buf, "YES")) {
+            return 1;  // Yes response
+        } else if (equals_ic(buf, "N") || equals_ic(buf, "NO")) {
+            return 0;  // No response
+        } else {
+            printf("Invalid choice. Please enter Y (Yes) or N (No).\n");
+        }
     }
 }
 
 /* ---------- UPDATE (fully rewritten) ---------- */
-void cmd_update(const char *args){
+void cmd_update(const char *args) {
+    // Check if user wants to exit at the start of the function
+    if (check_exit(args)) {
+        printf("Exiting update operation.\n");
+        return;  // Exit the update operation
+    }
+
     // block if no file open
     if (g_open_filename[0] == '\0') {
         printf("CMS: No file opened.\n");
         return;
     }
 
+    // Prompt user for student ID to update
     int id = prompt_int("Enter student ID to update: ");
+    
+    // If the user enters "quit", exit the update operation immediately
+    if (check_exit(args)) {
+        printf("Exiting update operation.\n");
+        return;  // Exit the update operation immediately
+    }
+
+    // Find the record by ID
     int idx = find_index_by_id(id);
 
     if (idx < 0) {
-        printf("CMS: No record found.\n");
-        return;
+        // Only print this if "quit" was not entered
+        return;  // Exit the function early if no record is found
     }
 
     Student *s = &g_students[idx];
@@ -879,41 +978,54 @@ void cmd_update(const char *args){
 
 
 /* ---------- DELETE ---------- */
-void cmd_delete(const char *args){
-    // block if no file open
+void cmd_delete(const char *args) {
+    // Check if user wants to exit at the start of the function
+    if (check_exit(args)) {
+        printf("Exiting delete operation.\n");
+        return;  // Exit the delete operation immediately
+    }
+
     if (g_open_filename[0] == '\0') {
         printf("CMS: No file opened.\n");
         return;
     }
 
+    // Prompt user for student ID to delete
     int id = prompt_int("Enter student ID to delete: ");
+    
+    // If the user enters "quit", exit the delete operation immediately
+    if (check_exit(args)) {
+        printf("Exiting delete operation.\n");
+        return;  // Exit the delete operation immediately
+    }
+
+    // Find the record by ID
     int idx = find_index_by_id(id);
 
-    if(idx<0){
-        printf("CMS: No record found.\n");
-        return;
+    if (idx < 0) {
+        return;  // Exit if no record found 
     }
 
-    printf("Are you sure? (Y/N): ");
-    char b[8];
-    fgets(b,sizeof(b),stdin);
-    if(toupper(b[0])!='Y'){
+    // First confirmation prompt
+    if (!prompt_yes_no("Are you sure you want to delete this record?")) {
         printf("Delete cancelled.\n");
         return;
     }
 
-    printf("Confirm again (Y/N): ");
-    fgets(b,sizeof(b),stdin);
-    if(toupper(b[0])!='Y'){
+    // Second confirmation prompt
+    if (!prompt_yes_no("Confirm again")) {
         printf("Delete cancelled.\n");
         return;
     }
 
+    // Perform delete operation
     Student removed = g_students[idx];
-    push_undo('D', removed, removed);   // UNDO for DELETE
+    push_undo('D', removed, removed);   // Store the deletion in the undo stack
 
-    for(int i=idx;i<g_count-1;i++)
-        g_students[i]=g_students[i+1];
+    // Shift all records after the deleted one
+    for (int i = idx; i < g_count - 1; i++) {
+        g_students[i] = g_students[i + 1];
+    }
     g_count--;
 
     printf("CMS: Record deleted.\n");
@@ -1018,34 +1130,65 @@ void cmd_show_summary(void) {
     float sum = 0.0f;
     int idx_max = 0;   // index of the highest mark
     int idx_min = 0;   // index of the lowest mark
+    float max_mark = g_students[0].mark;
+    float min_mark = g_students[0].mark;
+
+    // Arrays to store students with the same highest or lowest mark
+    int max_students[g_count];
+    int min_students[g_count];
+    int max_count = 0, min_count = 0;
 
     // loop through all records to find sum, min, max
     for (int i = 0; i < count; i++) {
         float mark = g_students[i].mark;
         sum += mark;
 
-        if (mark > g_students[idx_max].mark) {
-            idx_max = i;
+        // Check for highest mark
+        if (mark > max_mark) {
+            max_mark = mark;
+            max_count = 0;  // reset the counter for students with max mark
+            max_students[max_count++] = i;
+        } else if (mark == max_mark) {
+            // If another student has the same highest mark, add them to the array
+            max_students[max_count++] = i;
         }
-        if (mark < g_students[idx_min].mark) {
-            idx_min = i;
+
+        // Check for lowest mark
+        if (mark < min_mark) {
+            min_mark = mark;
+            min_count = 0;  // reset the counter for students with min mark
+            min_students[min_count++] = i;
+        } else if (mark == min_mark) {
+            // If another student has the same lowest mark, add them to the array
+            min_students[min_count++] = i;
         }
     }
 
     float average = sum / count;
 
-    Student *s_max = &g_students[idx_max];
-    Student *s_min = &g_students[idx_min];
-
+    // Display the highest and lowest marks along with student names
     printf("CMS SUMMARY\n");
     printf("-----------\n");
     printf("Total number of students : %d\n", count);
     printf("Average mark             : %.2f\n", average);
-    printf("Highest mark             : %.1f (Student ID: %d, Name: %s)\n",
-           s_max->mark, s_max->id, s_max->name);
-    printf("Lowest mark              : %.1f (Student ID: %d, Name: %s)\n",
-           s_min->mark, s_min->id, s_min->name);
+    printf("Highest mark             : %.1f\n", max_mark);
+    printf("Lowest mark              : %.1f\n", min_mark);
+
+    // Show highest mark details
+    printf("Student(s) with highest mark:\n");
+    for (int i = 0; i < max_count; i++) {
+        int idx = max_students[i];
+        printf("  ID: %d, Name: %s, Mark: %.1f\n", g_students[idx].id, g_students[idx].name, g_students[idx].mark);
+    }
+    
+    // Show lowest mark details
+    printf("\nStudent(s) with lowest mark:\n");
+    for (int i = 0; i < min_count; i++) {
+        int idx = min_students[i];
+        printf("  ID: %d, Name: %s, Mark: %.1f\n", g_students[idx].id, g_students[idx].name, g_students[idx].mark);
+    }
 }
+
 
 /* ---------- PRINT DECLARATION ---------- */
 void print_declaration(void){
@@ -1188,3 +1331,5 @@ int main(void) {
 
     return 0;
 } 
+
+
