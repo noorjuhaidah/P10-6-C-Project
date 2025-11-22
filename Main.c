@@ -1,51 +1,65 @@
-
 #define _CRT_SECURE_NO_WARNINGS
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
 #include <math.h>   // for roundf()
+
+// Predefined usernames and passwords for role-based login
 #define ADMIN_USERNAME "admin"
 #define ADMIN_PASSWORD "admin"  // admin password
 #define STUDENT_USERNAME "student"
 #define STUDENT_PASSWORD "student"  // student password
+
+// Default file that student accounts auto-load
 #define DEFAULT_STUDENT_DB "P10_6-cms.txt"
 
 /* ---------- Simple configuration ---------- */
+// Maximum number of student records we keep in memory
 #define MAX_STUDENTS 1000
+// Maximum length for student name
 #define NAME_MAX_LEN 128
+// Maximum length for programme name
 #define PROG_MAX_LEN 128
+// Maximum length for each input line (file / user input)
 #define LINE_MAX_LEN 1024
 
 /* ---------- Data type ---------- */
+// Single student record
 typedef struct {
-    int   id;
-    char  name[NAME_MAX_LEN];
-    char  programme[PROG_MAX_LEN];
-    float mark;
+    int   id;                        // 7-digit student ID starting with 2
+    char  name[NAME_MAX_LEN];        // Full name
+    char  programme[PROG_MAX_LEN];   // Programme name (e.g. "Digital SC")
+    float mark;                      // Final mark (0–100)
 } Student;
 
 /* ---------- UNDO FEATURE STRUCTURE ---------- */
+// One entry in the undo history (for INSERT/UPDATE/DELETE)
 typedef struct {
     char op;          // 'I' (insert), 'U' (update), 'D' (delete)
     Student before;   // State BEFORE modification
     Student after;    // State AFTER modification
 } UndoEntry;
 
+// Undo history stack and count
 UndoEntry g_undo[1000];
 int g_undo_count = 0;
 
 /* ---------- Globals ---------- */
+// In-memory "database" of students
 Student g_students[MAX_STUDENTS];
+// Current number of loaded students
 int     g_count = 0;
+// Name of the currently opened file (empty if none)
 char    g_open_filename[260] = "";
+// Login role: 0 - student (read-only), 1 - admin (full access)
 int     g_is_admin = 0; // 0 - student, 1 - admin
 
 /* ---------- Helper functions ---------- */
 int equals_ic(const char *a, const char *b);
 
 
-// Check if the user wants to quit
+// Check if the user wants to quit current operation (by typing QUIT)
 int check_exit(const char *input) {
     if (equals_ic(input, "QUIT")) {
         return 1;  // User wants to quit
@@ -53,19 +67,19 @@ int check_exit(const char *input) {
     return 0;  // Continue as normal
 }
 
-//Removes newline characters (\n or \r) at the end of a string.
+// Removes newline characters (\n or \r) at the end of a string.
 void rstrip(char *s) {
     size_t n = strlen(s);
     while (n && (s[n - 1] == '\n' || s[n - 1] == '\r')) s[--n] = '\0';
 }
-//Removes spaces at both the front and the back of a string.
+// Removes spaces at both the front and the back of a string.
 void trim(char *s) {
     size_t i = 0;
     while (s[i] && isspace((unsigned char)s[i])) i++;
     if (i) memmove(s, s + i, strlen(s + i) + 1);
     size_t n = strlen(s); while (n && isspace((unsigned char)s[n - 1])) s[--n] = '\0';
 }
-// Case-insensitive string comparison
+// Case-insensitive string comparison (returns 1 if equal, 0 if not equal)
 int equals_ic(const char *a, const char *b) {
     while (*a && *b) {
         if (toupper((unsigned char)*a) != toupper((unsigned char)*b)) return 0;
@@ -73,7 +87,7 @@ int equals_ic(const char *a, const char *b) {
     }
     return *a == '\0' && *b == '\0';
 }
-// Find index by student ID
+// Find index of a student in g_students by ID (returns -1 if not found)
 int find_index_by_id(int id) {
     for (int i = 0; i < g_count; ++i)
         if (g_students[i].id == id) return i;
@@ -81,6 +95,7 @@ int find_index_by_id(int id) {
 }
 
 /* ---------- User Login Function ---------- */
+// Handles login and sets g_is_admin based on username/password
 int login() {
     char username[64], password[64];
     int attempts = 5;  // Max attempts: 5 total attempts (for password only)
@@ -90,13 +105,14 @@ int login() {
         fgets(username, sizeof(username), stdin);
         rstrip(username);
 
-        // Check for invalid username
+        // Check for invalid username (we only allow admin/student)
         if (!equals_ic(username, ADMIN_USERNAME) && !equals_ic(username, STUDENT_USERNAME)) {
             printf("Invalid username. Please enter a valid username.\n");
+            // Username error does NOT consume an attempt
             continue; // Skip password check and allow retry without decrementing attempts
         }
 
-        // Admin login
+        // Admin login flow
         if (equals_ic(username, ADMIN_USERNAME)) {
             printf("Enter password: ");
             fgets(password, sizeof(password), stdin);
@@ -104,13 +120,13 @@ int login() {
 
             if (equals_ic(password, ADMIN_PASSWORD)) {
                 g_is_admin = 1;  // Admin login
-                return 1;
+                return 1;        // Success
             } else {
                 printf("Invalid admin password. Try again.\n");
             }
         }
 
-        // Student login
+        // Student login flow
         else if (equals_ic(username, STUDENT_USERNAME)) {
             printf("Enter password: ");
             fgets(password, sizeof(password), stdin);
@@ -118,7 +134,7 @@ int login() {
 
             if (equals_ic(password, STUDENT_PASSWORD)) {
                 g_is_admin = 0;  // Student login
-                return 1;
+                return 1;        // Success
             } else {
                 printf("Invalid student password. Try again.\n");
             }
@@ -139,8 +155,9 @@ int login() {
 }
 
 /* ---------- UNDO helper ---------- */
+// Store one undo action into the undo stack
 void push_undo(char op, Student before, Student after) {
-    if (g_undo_count >= 1000) return; // prevent overflow
+    if (g_undo_count >= 1000) return; // prevent overflow of undo array
     g_undo[g_undo_count].op = op;
     g_undo[g_undo_count].before = before;
     g_undo[g_undo_count].after = after;
@@ -148,6 +165,7 @@ void push_undo(char op, Student before, Student after) {
 }
 
 /* ---------- Sorting (Bubble Sort) ---------- */
+// Sort array by student ID using bubble sort (asc=1 ascending, asc=0 descending)
 void sort_by_id(int asc){
     for(int i=0;i<g_count-1;i++){
         for(int j=0;j<g_count-1-i;j++){
@@ -161,6 +179,7 @@ void sort_by_id(int asc){
         }
     }
 }
+// Sort array by mark using bubble sort (asc=1 ascending, asc=0 descending)
 void sort_by_mark(int asc){
     for(int i=0;i<g_count-1;i++){
         for(int j=0;j<g_count-1-i;j++){
@@ -175,6 +194,7 @@ void sort_by_mark(int asc){
     }
 }
 
+// Parse the "SORT BY ..." part after SHOW ALL and call the correct sort function
 void handle_sort(const char *args){
     if(!args || !*args) return;
 
@@ -183,6 +203,7 @@ void handle_sort(const char *args){
     buf[sizeof(buf)-1] = '\0';
     trim(buf);
 
+    // Expect tokens like: SORT BY ID ASC
     char *tok1 = strtok(buf, " \t");
     char *tok2 = strtok(NULL, " \t");
     char *tok3 = strtok(NULL, " \t");
@@ -209,13 +230,14 @@ void handle_sort(const char *args){
 }
 
 /* ---------- load_from_file (robust parsing) ---------- */
+// Load student records from text file into g_students
 int load_from_file(const char *filename){
     FILE *fp = fopen(filename, "r");
     if(!fp) return 0;
 
     g_count = 0;
     char line[LINE_MAX_LEN];
-    int table_started = 0;
+    int table_started = 0;   // 0 until we see the header row
 
     while(fgets(line, sizeof(line), fp)){
         rstrip(line);
@@ -225,9 +247,9 @@ int load_from_file(const char *filename){
         raw[sizeof(raw)-1] = 0;
         trim(raw);
 
-        if(raw[0]=='\0') continue;
+        if(raw[0]=='\0') continue;  // skip empty lines
 
-        /* Detect header row */
+        /* Detect header row: look for "ID" and "MARK" */
         if(!table_started){
             char up[LINE_MAX_LEN];
             strncpy(up, raw, sizeof(up)-1);
@@ -239,13 +261,16 @@ int load_from_file(const char *filename){
             continue;
         }
 
+        // Data rows must start with a digit (student ID)
         if(!isdigit((unsigned char)raw[0])) continue;
 
         /* ----- Parse ID ----- */
         int len = strlen(raw);
         int i=0;
+        // Skip leading spaces
         while(i<len && isspace((unsigned char)raw[i])) i++;
         int id_start=i;
+        // Read digits for ID
         while(i<len && isdigit((unsigned char)raw[i])) i++;
         int id_end=i;
 
@@ -256,15 +281,18 @@ int load_from_file(const char *filename){
         idbuf[idlen]='\0';
         int id = atoi(idbuf);
 
+        // Mid section begins after ID (where name+programme sit)
         while(i<len && isspace((unsigned char)raw[i])) i++;
         int mid_start=i;
 
         /* ----- Parse mark from right ----- */
         int j=len-1;
+        // Move left, skipping spaces
         while(j>=0 && isspace((unsigned char)raw[j])) j--;
         int mark_end=j+1;
 
         int mark_start=j;
+        // Move left until we go past digits and optional decimal point
         while(mark_start>=0 &&
               (isdigit((unsigned char)raw[mark_start]) || raw[mark_start]=='.'))
             mark_start--;
@@ -275,7 +303,7 @@ int load_from_file(const char *filename){
         if(marklen>=15) marklen=15;
         memcpy(markbuf, raw+mark_start, marklen);
         markbuf[marklen]='\0';
-        float mark = atof(markbuf);
+        float mark = atof(markbuf);  // convert substring to float
 
         /* ----- Middle (Name + Programme) ----- */
         int mid_end = mark_start;
@@ -289,7 +317,7 @@ int load_from_file(const char *filename){
         char name[NAME_MAX_LEN]="";
         char prog[PROG_MAX_LEN]="";
 
-        /* Look for 2+ spaces as separator */
+        /* Look for 2+ spaces as separator between name and programme */
         int sep=-1;
         for(int k=0; middle[k] && middle[k+1]; ++k){
             if(middle[k]==' ' && middle[k+1]==' '){
@@ -299,6 +327,7 @@ int load_from_file(const char *filename){
         }
 
         if(sep>=0){
+            // Split on the first "double space" region
             int nlen=sep;
             while(nlen>0 && isspace((unsigned char)middle[nlen-1])) nlen--;
             memcpy(name, middle, nlen);
@@ -309,24 +338,25 @@ int load_from_file(const char *filename){
             strncpy(prog, middle+pstart, PROG_MAX_LEN-1);
             prog[PROG_MAX_LEN-1] = '\0';
         } else {
-            /* Fallback: first two words = name, rest = programme */
+            /* Fallback: assume first two words = name, rest = programme */
             char tmp[LINE_MAX_LEN];
             strncpy(tmp, middle, sizeof(tmp)-1);
             tmp[sizeof(tmp)-1] = 0;
 
             char *p=tmp;
             while(*p && isspace((unsigned char)*p)) p++;
-            char *w1=p;
+            char *w1=p;                         // first word of name
             while(*p && !isspace((unsigned char)*p)) p++;
             if(*p) *p++='\0';
 
             while(*p && isspace((unsigned char)*p)) p++;
-            char *w2=p;
+            char *w2=p;                         // second word of name
             while(*p && !isspace((unsigned char)*p)) p++;
             if(*p) *p++='\0';
 
             snprintf(name, sizeof(name), "%s %s", w1, w2);
 
+            // Remaining string treated as programme
             while(*p && isspace((unsigned char)*p)) p++;
             strncpy(prog, p, PROG_MAX_LEN-1);
             prog[PROG_MAX_LEN-1]='\0';
@@ -335,6 +365,7 @@ int load_from_file(const char *filename){
         trim(name);
         trim(prog);
 
+        // Only store if we still have space in the array
         if(g_count < MAX_STUDENTS){
             Student s;
             s.id=id;
@@ -352,6 +383,7 @@ int load_from_file(const char *filename){
 }
 
 /* ---------- SAVE ---------- */
+// Write all current in-memory records into the given file
 int save_to_file(const char *filename){
     FILE *fp = fopen(filename,"w");
     if(!fp) return 0;
@@ -374,6 +406,7 @@ int save_to_file(const char *filename){
 }
 
 /* ===================== COMMANDS ===================== */
+// Print full help menu for admin users
 void show_help(void){
     printf("\n--------------------------------------------------------------------------------");
     printf("\nAvailable Commands:\n");
@@ -399,6 +432,7 @@ void show_help(void){
     printf("--------------------------------------------------------------------------------\n");
 }
 
+// Shorter help menu for student users (read-only view)
 void show_help_student(void){
     printf("\n--------------------------------------------------------------------------------");
     printf("\nAvailable Commands (Student Access Only):\n");   
@@ -418,11 +452,14 @@ void show_help_student(void){
 }
 
 /* ---------- OPEN ---------- */
+// Handle OPEN <filename> command (admin only)
 void cmd_open(const char *args){
     char fname[260]="";
 
+    // Skip spaces before filename
     while(*args && isspace((unsigned char)*args)) args++;
 
+    // Read filename until next space / end-of-line
     size_t i=0;
     while(*args && !isspace((unsigned char)*args) && i<sizeof(fname)-1)
         fname[i++]=*args++;
@@ -433,6 +470,7 @@ void cmd_open(const char *args){
         return;
     }
 
+    // Try to load file; if fail, remember filename and create new file on SAVE
     if(!load_from_file(fname)){
         strncpy(g_open_filename,fname,sizeof(g_open_filename)-1);
         g_open_filename[sizeof(g_open_filename)-1]='\0';
@@ -447,12 +485,14 @@ void cmd_open(const char *args){
 }
 
 /* ---------- SHOW ALL ---------- */
+// Handle SHOW ALL (with optional SORT BY ...) for displaying records
 void cmd_show_all(const char *args){
     if(g_count==0){
         printf("CMS: No records loaded.\n");
         return;
     }
 
+    // If user added "SORT BY ..." after SHOW ALL, handle it
     handle_sort(args);
 
     printf("CMS: Here are all the records.\n");
@@ -468,15 +508,18 @@ void cmd_show_all(const char *args){
 }
 
 /* ---------- INSERT ---------- */
+// Prompt non-empty string from user
 void prompt_string(const char *label,char*out,size_t outsz){
     while(1){
         printf("%s", label);
         if(!fgets(out,outsz,stdin)) { out[0]=0; return; }
-        rstrip(out); trim(out);
-        if(out[0]) return;
+        rstrip(out); 
+        trim(out);
+        if(out[0]) return;   // not empty => ok
         printf("Please enter something.\n");
     }
 }
+// Prompt for integer input with basic validation (supports QUIT)
 int prompt_int(const char *label) {
     char buf[64];
     while (1) {
@@ -485,7 +528,7 @@ int prompt_int(const char *label) {
         rstrip(buf);
         trim(buf);
 
-        // Check if user wants to exit
+        // Check if user wants to exit this operation
         if (check_exit(buf)) {
             printf("Exiting operation.\n");
             return 0;  // Exit the current operation
@@ -497,6 +540,7 @@ int prompt_int(const char *label) {
         printf("Invalid integer.\n");
     }
 }
+// Prompt for float input with basic validation (supports QUIT)
 float prompt_float(const char *label) {
     char buf[64];
     while (1) {
@@ -566,7 +610,7 @@ int prompt_student_id(void){
         rstrip(buf);
         trim(buf);
 
-        // allow user to type QUIT to cancel
+        // allow user to type QUIT to cancel this input
         if (check_exit(buf)) {
             return -1;   // special value = user cancelled
         }
@@ -574,6 +618,7 @@ int prompt_student_id(void){
         int len = (int)strlen(buf);
         int ok = 1;
 
+        // Rule: exactly 7 digits and must start with '2'
         if(len != 7 || buf[0] != '2'){
             ok = 0;
         } else {
@@ -603,37 +648,38 @@ float prompt_mark(const char *label) {
         rstrip(buf);
         trim(buf);
 
-        // Check empty
+        // Check empty input
         if (buf[0] == '\0') {
             printf("Mark cannot be empty.\n");
             continue;
         }
 
-        // Convert
+        // Convert string to float
         char *end;
         float v = strtof(buf, &end);
 
-        // Reject invalid text
+        // Reject invalid text (e.g. "abc")
         if (*end != '\0') {
             printf("Invalid number.\n");
             continue;
         }
 
-        // Range check
+        // Range check 0–100
         if (v < 0 || v > 100) {
             printf("Mark must be between 0 and 100.\n");
             continue;
         }
 
-        // Round to 1 dp
+        // Round to 1 decimal place
         v = roundf(v * 10.0f) / 10.0f;
         return v;
     }
 }
 
 /* ---------- INSERT ---------- */
+// INSERT command: add a new student after validation
 void cmd_insert(const char *args) {
-    // Check if user wants to exit
+    // Quick escape: if user typed QUIT after INSERT
     if (check_exit(args)) {
         printf("Exiting insert operation.\n");
         return;  // Exit the insert operation
@@ -649,7 +695,7 @@ void cmd_insert(const char *args) {
         return;
     }
 
-        int id;
+    int id;
 
     // Validate ID format + check duplicate, using prompt_student_id
     while (1) {
@@ -671,10 +717,11 @@ void cmd_insert(const char *args) {
     char prog[PROG_MAX_LEN];
     float mark;
 
-    // VALIDATED INPUTS
+    // VALIDATED INPUTS FOR NAME
     while (1) {
         prompt_string("Enter Name: ", name, sizeof(name));
 
+        // Allow user to cancel by typing QUIT
         if (check_exit(name)) {
             printf("Exiting insert operation.\n");
             return;
@@ -685,17 +732,20 @@ void cmd_insert(const char *args) {
             continue;
         }
 
+        // Additional rule: name must be at least 7 characters long
         if (strlen(name) < 7) {
             printf("Error: Name must be at least 7 characters long.\n");
             continue;
         }
 
-    break;
-}
+        break;
+    }
 
+    // VALIDATED INPUTS FOR PROGRAMME
     while (1) {
         prompt_string("Enter Programme: ", prog, sizeof(prog));
 
+        // Allow user to cancel by typing QUIT
         if (check_exit(prog)) {
             printf("Exiting insert operation.\n");
             return;
@@ -706,6 +756,7 @@ void cmd_insert(const char *args) {
             continue;
         }
 
+        // Additional rule: programme must be at least 7 characters long
         if (strlen(prog) < 7) {
             printf("Error: Programme must be at least 7 characters long.\n");
             continue;
@@ -714,8 +765,10 @@ void cmd_insert(const char *args) {
         break;
     }
 
+    // Validated mark (0–100, rounded to 1 dp)
     mark = prompt_mark("Enter Mark: ");  // assuming this is validated already
 
+    // Build new student record
     Student s;
     s.id = id;
     strncpy(s.name, name, NAME_MAX_LEN - 1);
@@ -724,6 +777,7 @@ void cmd_insert(const char *args) {
     s.programme[PROG_MAX_LEN - 1] = '\0';
     s.mark = mark;
 
+    // Add to array and record undo info
     g_students[g_count++] = s;
     push_undo('I', s, s);
 
@@ -733,6 +787,7 @@ void cmd_insert(const char *args) {
 
 
 /* ---------- QUERY ---------- */
+// QUERY command: search by ID and display matching record
 void cmd_query(const char *args){
     // block if no file open
     if (g_open_filename[0] == '\0') {
@@ -756,6 +811,7 @@ void cmd_query(const char *args){
 
 /* ---------- UPDATE ---------- */
 /* ---------- YES/NO VALIDATOR ---------- */
+// Ask a Y/N or YES/NO question; returns 1 for yes, 0 for no
 int prompt_yes_no(const char *msg) {
     char buf[16];
     
@@ -777,6 +833,7 @@ int prompt_yes_no(const char *msg) {
 }
 
 /* ---------- UPDATE (fully rewritten) ---------- */
+// UPDATE command: let admin selectively change ID, Name, Programme, Mark
 void cmd_update(const char *args) {
     // Check if user wants to exit at the start of the function
     if (check_exit(args)) {
@@ -793,7 +850,7 @@ void cmd_update(const char *args) {
     // Prompt user for student ID to update
     int id = prompt_int("Enter student ID to update: ");
     
-    // If the user enters "quit", exit the update operation immediately
+    // If the user enters "quit" in some earlier input, eventually exit
     if (check_exit(args)) {
         printf("Exiting update operation.\n");
         return;  // Exit the update operation immediately
@@ -819,7 +876,7 @@ void cmd_update(const char *args) {
     Student old = *s;     // backup for undo
     Student updated = *s; // temp copy for editing
 
-    int changed = 0;
+    int changed = 0;      // track if anything changed
 
     /* ===========================
        UPDATE STUDENT ID
@@ -967,8 +1024,9 @@ void cmd_update(const char *args) {
     /* ===========================
        APPLY UPDATE + UNDO
        =========================== */
-    *s = updated; // commit changes
+    *s = updated; // commit changes to actual record
 
+    // Store old and new versions for undo
     push_undo('U', old, *s);
 
     printf("\nCMS: Record updated successfully.\n");
@@ -986,6 +1044,7 @@ void cmd_update(const char *args) {
 
 
 /* ---------- DELETE ---------- */
+// DELETE command: remove a record by ID, with double confirmation
 void cmd_delete(const char *args) {
     // Check if user wants to exit at the start of the function
     if (check_exit(args)) {
@@ -1011,6 +1070,7 @@ void cmd_delete(const char *args) {
     int idx = find_index_by_id(id);
 
     if (idx < 0) {
+        // If record doesn't exist, just exit silently
         return;  // Exit if no record found 
     }
 
@@ -1020,7 +1080,7 @@ void cmd_delete(const char *args) {
         return;
     }
 
-    // Second confirmation prompt
+    // Second confirmation prompt (extra safety)
     if (!prompt_yes_no("Confirm again")) {
         printf("Delete cancelled.\n");
         return;
@@ -1030,7 +1090,7 @@ void cmd_delete(const char *args) {
     Student removed = g_students[idx];
     push_undo('D', removed, removed);   // Store the deletion in the undo stack
 
-    // Shift all records after the deleted one
+    // Shift all records after the deleted one left by one position
     for (int i = idx; i < g_count - 1; i++) {
         g_students[i] = g_students[i + 1];
     }
@@ -1041,6 +1101,7 @@ void cmd_delete(const char *args) {
 }
 
 /* ---------- SAVE ---------- */
+// SAVE command: write in-memory data to the currently opened file
 void cmd_save(void){
     if(g_open_filename[0]=='\0'){
         printf("CMS: No file opened.\n");
@@ -1053,12 +1114,14 @@ void cmd_save(void){
 }
 
 /* ---------- UNDO ---------- */
+// UNDO command: revert the last INSERT/UPDATE/DELETE if possible
 void cmd_undo(void) {
     if (g_undo_count == 0) {
         printf("CMS: No actions to undo.\n");
         return;
     }
 
+    // Take the last action from the undo stack
     UndoEntry last = g_undo[g_undo_count - 1];
     g_undo_count--;
 
@@ -1092,7 +1155,7 @@ void cmd_undo(void) {
 
     printf("--------------------------------------------------\n");
 
-    // Ask for confirmation
+    // Ask for confirmation before actually undoing
     if (prompt_yes_no("Do you want to undo this action?")) {
         if (last.op == 'I') {
             // Undo INSERT → remove inserted student
@@ -1127,6 +1190,7 @@ void cmd_undo(void) {
     }
 }
 
+// SHOW SUMMARY: display basic statistics about the marks
 void cmd_show_summary(void) {
     if (g_count == 0) {
         printf("CMS: No records loaded.\n");
@@ -1200,6 +1264,7 @@ void cmd_show_summary(void) {
 
 
 /* ---------- PRINT DECLARATION ---------- */
+// Print contents of declaration.txt (e.g. academic honesty / group info)
 void print_declaration(void){
     FILE *fp=fopen("declaration.txt","r");
     if(!fp){
@@ -1215,12 +1280,12 @@ void print_declaration(void){
 
 /* ---------- MAIN ---------- */
 int main(void) {
-    // Call the login function
+    // First, force user to log in (sets admin/student mode)
     if (!login()) return 0;  // If login fails, exit the program
 
     print_declaration();
 
-    // Auto-open for student
+    // For student accounts, auto-load the default DB file
     if (!g_is_admin) {
         if (!load_from_file(DEFAULT_STUDENT_DB)) {
             printf("CMS: Auto-load failed. Creating new DB on SAVE.\n");
@@ -1231,7 +1296,7 @@ int main(void) {
         g_open_filename[sizeof(g_open_filename)-1] = '\0';
     }
 
-    // Show help based on login type (admin or student)
+    // Show appropriate help menu based on role
     if (g_is_admin) {
         show_help();           // admin gets full help
     } else {
@@ -1240,20 +1305,24 @@ int main(void) {
 
     char line[LINE_MAX_LEN];
 
+    // Main command loop
     while (1) {
         printf("> ");
         if (!fgets(line, sizeof(line), stdin)) break;
         rstrip(line);
-        if (line[0] == '\0') continue;
+        if (line[0] == '\0') continue;   // ignore empty input
 
         char cmd[64];
         int i = 0;
         const char *p = line;
 
+        // Move p to first non-space char (start of command)
         while (*p && isspace((unsigned char)*p)) p++;
+        // Copy command word into cmd
         while (*p && !isspace((unsigned char)*p) && i < 63)
             cmd[i++] = *p++;
         cmd[i] = 0;
+        // p now points to arguments part
         while (*p && isspace((unsigned char)*p)) p++;
 
         // Command processing
@@ -1275,7 +1344,7 @@ int main(void) {
             if (*p == '\0') {
                 printf("CMS: Use SHOW ALL or SHOW SUMMARY.\n");
             } else {
-                // Handle SHOW commands
+                // Handle SHOW commands (ALL / SUMMARY)
                 char first[16];
                 int fi = 0;
                 const char *q = p;
@@ -1324,7 +1393,7 @@ int main(void) {
             }
         }
         else if (equals_ic(cmd, "QUERY")) {
-            cmd_query(p);
+            cmd_query(p); // Both admin and student can query
         }
         else if (equals_ic(cmd, "UPDATE")) {
             if (g_is_admin) {
@@ -1339,6 +1408,7 @@ int main(void) {
     }
 
     return 0;
-} 
+}
+
 
 
