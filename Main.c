@@ -732,12 +732,6 @@ void cmd_insert(const char *args) {
             continue;
         }
 
-        // Additional rule: name must be at least 7 characters long
-        if (strlen(name) < 7) {
-            printf("Error: Name must be at least 7 characters long.\n");
-            continue;
-        }
-
         break;
     }
 
@@ -753,12 +747,6 @@ void cmd_insert(const char *args) {
 
         if (!is_alpha_space(prog)) {
             printf("Error: Programme must only contain letters and spaces.\n");
-            continue;
-        }
-
-        // Additional rule: programme must be at least 7 characters long
-        if (strlen(prog) < 7) {
-            printf("Error: Programme must be at least 7 characters long.\n");
             continue;
         }
 
@@ -865,7 +853,7 @@ void cmd_update(const char *args) {
     int idx = find_index_by_id(id);
 
     if (idx < 0) {
-        // Only print this if "quit" was not entered
+        printf("CMS: No record found.\n");
         return;  // Exit the function early if no record is found
     }
 
@@ -1080,7 +1068,7 @@ void cmd_delete(const char *args) {
     int idx = find_index_by_id(id);
 
     if (idx < 0) {
-        // If record doesn't exist, just exit silently
+        printf("CMS: No record found.\n");
         return;  // Exit if no record found 
     }
 
