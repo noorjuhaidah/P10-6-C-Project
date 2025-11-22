@@ -53,19 +53,19 @@ int check_exit(const char *input) {
     return 0;  // Continue as normal
 }
 
-
+//Removes newline characters (\n or \r) at the end of a string.
 void rstrip(char *s) {
     size_t n = strlen(s);
     while (n && (s[n - 1] == '\n' || s[n - 1] == '\r')) s[--n] = '\0';
 }
-
+//Removes spaces at both the front and the back of a string.
 void trim(char *s) {
     size_t i = 0;
     while (s[i] && isspace((unsigned char)s[i])) i++;
     if (i) memmove(s, s + i, strlen(s + i) + 1);
     size_t n = strlen(s); while (n && isspace((unsigned char)s[n - 1])) s[--n] = '\0';
 }
-
+// Case-insensitive string comparison
 int equals_ic(const char *a, const char *b) {
     while (*a && *b) {
         if (toupper((unsigned char)*a) != toupper((unsigned char)*b)) return 0;
@@ -73,7 +73,7 @@ int equals_ic(const char *a, const char *b) {
     }
     return *a == '\0' && *b == '\0';
 }
-
+// Find index by student ID
 int find_index_by_id(int id) {
     for (int i = 0; i < g_count; ++i)
         if (g_students[i].id == id) return i;
@@ -427,7 +427,7 @@ void cmd_open(const char *args){
     while(*args && !isspace((unsigned char)*args) && i<sizeof(fname)-1)
         fname[i++]=*args++;
     fname[i]='\0';
-
+    
     if(fname[0]=='\0'){
         printf("CMS: Please provide a filename.\n");
         return;
@@ -436,7 +436,7 @@ void cmd_open(const char *args){
     if(!load_from_file(fname)){
         strncpy(g_open_filename,fname,sizeof(g_open_filename)-1);
         g_open_filename[sizeof(g_open_filename)-1]='\0';
-        printf("CMS: File not found — will create new on SAVE.\n");
+        printf("CMS: File not found — will create new on SAVE.\n"); 
         return;
     }
 
@@ -556,8 +556,6 @@ void prompt_programme(char *out, size_t outsz) {
         break;
     }
 }
-
-// NEW: validate student ID (must start with 2 + 7 digits)
 // NEW: validate student ID (must start with 2 + 7 digits, supports QUIT)
 int prompt_student_id(void){
     char buf[64];
@@ -677,32 +675,42 @@ void cmd_insert(const char *args) {
     while (1) {
         prompt_string("Enter Name: ", name, sizeof(name));
 
-        // Check if user wants to quit
         if (check_exit(name)) {
             printf("Exiting insert operation.\n");
-            return;  // Exit the insert operation
+            return;
         }
 
         if (!is_alpha_space(name)) {
             printf("Error: Name must only contain letters and spaces.\n");
             continue;
         }
-        break;
-    }
+
+        if (strlen(name) < 7) {
+            printf("Error: Name must be at least 7 characters long.\n");
+            continue;
+        }
+
+    break;
+}
 
     while (1) {
         prompt_string("Enter Programme: ", prog, sizeof(prog));
 
-        // Check if user wants to quit
         if (check_exit(prog)) {
             printf("Exiting insert operation.\n");
-            return;  // Exit the insert operation
+            return;
         }
 
         if (!is_alpha_space(prog)) {
             printf("Error: Programme must only contain letters and spaces.\n");
             continue;
         }
+
+        if (strlen(prog) < 7) {
+            printf("Error: Programme must be at least 7 characters long.\n");
+            continue;
+        }
+
         break;
     }
 
