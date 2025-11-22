@@ -558,6 +558,7 @@ void prompt_programme(char *out, size_t outsz) {
 }
 
 // NEW: validate student ID (must start with 2 + 7 digits)
+// NEW: validate student ID (must start with 2 + 7 digits, supports QUIT)
 int prompt_student_id(void){
     char buf[64];
 
@@ -567,7 +568,12 @@ int prompt_student_id(void){
         rstrip(buf);
         trim(buf);
 
-        int len = strlen(buf);
+        // allow user to type QUIT to cancel
+        if (check_exit(buf)) {
+            return -1;   // special value = user cancelled
+        }
+
+        int len = (int)strlen(buf);
         int ok = 1;
 
         if(len != 7 || buf[0] != '2'){
@@ -645,27 +651,21 @@ void cmd_insert(const char *args) {
         return;
     }
 
-    int id;
+        int id;
 
-    // Validate ID + check duplicate
+    // Validate ID format + check duplicate, using prompt_student_id
     while (1) {
-        printf("Enter student ID: ");
-        char buf[64];
-        if (!fgets(buf, sizeof(buf), stdin)) continue;
-        rstrip(buf);
-        trim(buf);
+        id = prompt_student_id();   // uses our validation
 
-        // Check if user wants to exit
-        if (check_exit(buf)) {
+        if (id < 0) {               // user typed QUIT
             printf("Exiting insert operation.\n");
-            return;  // Exit the insert operation
+            return;
         }
 
-        id = atoi(buf);
         if (find_index_by_id(id) >= 0) {
             printf("Error: This ID exists.\n");
         } else {
-            break;
+            break;  // valid and unique
         }
     }
 
@@ -1134,9 +1134,10 @@ void cmd_show_summary(void) {
     float min_mark = g_students[0].mark;
 
     // Arrays to store students with the same highest or lowest mark
-    int max_students[g_count];
-    int min_students[g_count];
+    int max_students[MAX_STUDENTS];
+    int min_students[MAX_STUDENTS];
     int max_count = 0, min_count = 0;
+
 
     // loop through all records to find sum, min, max
     for (int i = 0; i < count; i++) {
