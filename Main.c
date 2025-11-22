@@ -848,7 +848,12 @@ void cmd_update(const char *args) {
     }
 
     // Prompt user for student ID to update
-    int id = prompt_int("Enter student ID to update: ");
+    int id = prompt_student_id();
+    if (id < 0) {
+        printf("Exiting update operation.\n");
+        return;
+    }
+
     
     // If the user enters "quit" in some earlier input, eventually exit
     if (check_exit(args)) {
@@ -1058,7 +1063,12 @@ void cmd_delete(const char *args) {
     }
 
     // Prompt user for student ID to delete
-    int id = prompt_int("Enter student ID to delete: ");
+    int id = prompt_student_id();
+    if (id < 0) {
+        printf("Exiting delete operation.\n");
+        return;
+    }
+
     
     // If the user enters "quit", exit the delete operation immediately
     if (check_exit(args)) {
